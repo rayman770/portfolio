@@ -37,6 +37,7 @@ def verify_code(code: str) -> bool:
 
 with st.sidebar:
     st.header("🔒 Access")
+    st.caption("**Hint:** the access code is printed at the **top-right of my resume**.")
     if not is_authed():
         pin = st.text_input("Enter access code", type="password")
         if st.button("Unlock"):
