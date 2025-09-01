@@ -1,37 +1,28 @@
-import os, time, bcrypt
+import os, time, hmac, bcrypt
 from pathlib import Path
 from PIL import Image
 import streamlit as st
-from streamlit_image_comparison import image_comparison
 
 # ---------- Config ----------
 st.set_page_config(page_title="Architecture Case Studies", page_icon="🧭", layout="wide")
 ASSETS = Path("assets")
 
-# Use a bcrypt hash in your environment: ACCESS_CODE_HASH
-# Generate one locally: 
-#   python - <<'PY'
-#   import bcrypt; print(bcrypt.hashpw(b"your-pin", bcrypt.gensalt()).decode())
-#   PY
-ACCESS_CODE_HASH = (
-    os.getenv("ACCESS_CODE_HASH", "") or st.secrets.get("ACCESS_CODE_HASH", "")
-)
-ACCESS_CODE = (
-    os.getenv("ACCESS_CODE", "") or st.secrets.get("ACCESS_CODE", "")
-)
+# Access control: set ONE of these in Streamlit Cloud (Settings → Secrets)
+#   ACCESS_CODE          = "jjeongarch"                 # plaintext (simple)
+#   ACCESS_CODE_HASH     = bcrypt hash of your code     # stronger
+ACCESS_CODE_HASH = os.getenv("ACCESS_CODE_HASH", "") or st.secrets.get("ACCESS_CODE_HASH", "")
+ACCESS_CODE      = os.getenv("ACCESS_CODE", "")      or st.secrets.get("ACCESS_CODE", "")
 
-# ---------- Tiny Gate ----------
+# ---------- Auth helpers ----------
 def is_authed():
     if st.session_state.get("authed"):
         return True
-    # also accept ?code= query param
     qp = st.experimental_get_query_params()
     if "code" in qp and qp["code"]:
         return verify_code(qp["code"][0])
     return False
 
 def verify_code(code: str) -> bool:
-    # 1) If a bcrypt hash is configured, use it (preferred)
     if ACCESS_CODE_HASH:
         try:
             ok = bcrypt.checkpw(code.encode(), ACCESS_CODE_HASH.encode())
@@ -39,16 +30,31 @@ def verify_code(code: str) -> bool:
             ok = False
         st.session_state["authed"] = bool(ok)
         return ok
-    # 2) Else fall back to plaintext (constant-time compare)
     if ACCESS_CODE:
         ok = hmac.compare_digest(code, ACCESS_CODE)
         st.session_state["authed"] = bool(ok)
         return ok
-    # 3) Nothing configured → block (safer than allowing everyone)
     st.error("No access code configured. Set ACCESS_CODE or ACCESS_CODE_HASH.")
     st.session_state["authed"] = False
     return False
 
+# ---------- Small helpers ----------
+def kpi(label, value, sub=""):
+    c = st.container(border=True)
+    c.metric(label, value, sub)
+
+def load_first(*names: str) -> Image.Image | None:
+    """Return the first image that exists under assets/, or None."""
+    for n in names:
+        p = ASSETS / n
+        if p.exists():
+            try:
+                return Image.open(p)
+            except Exception:
+                pass
+    return None
+
+# ---------- Sidebar gate ----------
 with st.sidebar:
     st.header("🔒 Access")
     st.caption("**Hint:** the access code is printed at the **top-right of my resume**.")
@@ -63,25 +69,26 @@ with st.sidebar:
                 st.error("Wrong code")
         st.stop()
     st.success("Access granted")
-    st.write("Tip: share a one-line hint in your resume (e.g., last 4 digits of …)")
 
 # ---------- Header ----------
 st.title("Architecture Case Studies")
-st.caption("Interactive before/after views of recent infrastructure transformations.")
+st.caption("Interactive snapshots of recent infrastructure transformations.")
 
-def kpi(label, value, sub=""):
-    c = st.container(border=True)
-    c.metric(label, value, sub)
-
-# ---------- Case 1: FE containerized + AKS with BE (BFF) ----------
+# ============================================================
+# Case 1 — FE containerized + AKS with B/E (BFF)
+# ============================================================
 st.subheader("1) FE containerized + AKS with B/E (BFF pattern)")
+
+img_fe = load_first(
+    "FE_Arch_Improvement.webp",
+    "fe.webp", "fe-after.webp"  # optional alternates
+)
 col1, col2 = st.columns([1.2, 0.8])
 with col1:
-    image_comparison(
-        img1=Image.open(ASSETS/"fe-before.webp"),
-        img2=Image.open(ASSETS/"fe-after.webp"),
-        label1="Before", label2="After", width=900,
-    )
+    if img_fe:
+        st.image(img_fe, use_column_width=True)
+    else:
+        st.warning("FE image not found in assets/")
 with col2:
     st.markdown("""
 - Frontend moved from **Storage static hosting** → **AKS pods**  
@@ -96,15 +103,21 @@ with col2:
 
 st.divider()
 
-# ---------- Case 2: Docker Hub proxy cache (Nexus) ----------
+# ============================================================
+# Case 2 — Docker Hub proxy cache (Nexus)
+# ============================================================
 st.subheader("2) Eliminated external dependency w/ Nexus Docker proxy cache")
+
+img_proxy = load_first(
+    "Nexus_Improvement.webp",
+    "proxy.webp", "proxy-after.webp"
+)
 col1, col2 = st.columns([1.2, 0.8])
 with col1:
-    image_comparison(
-        img1=Image.open(ASSETS/"proxy-before.webp"),
-        img2=Image.open(ASSETS/"proxy-after.webp"),
-        label1="Before (429s via Hub)", label2="After (cached via Nexus)", width=900,
-    )
+    if img_proxy:
+        st.image(img_proxy, use_column_width=True)
+    else:
+        st.warning("Nexus/Proxy image not found in assets/")
 with col2:
     st.markdown("""
 - Configured **Nexus Docker proxy** in-cluster (pull-through cache)  
@@ -118,15 +131,22 @@ with col2:
 
 st.divider()
 
-# ---------- Case 3: Keycloak clustering + build cache ----------
+# ============================================================
+# Case 3 — Keycloak clustering + build cache
+# ============================================================
 st.subheader("3) Keycloak: StatefulSet clustering + build cache (PVC)")
+
+img_kc = load_first(
+    "Kecloak After.webp",           # your current file name (with space + typo)
+    "Keycloak_Improvement.webp",    # nicer alternative if you rename later
+    "kc.webp", "kc-after.webp"
+)
 col1, col2 = st.columns([1.2, 0.8])
 with col1:
-    image_comparison(
-        img1=Image.open(ASSETS/"kc-before.webp"),
-        img2=Image.open(ASSETS/"kc-after.webp"),
-        label1="Before (sticky, no replication)", label2="After (DNS_PING + Infinispan)", width=900,
-    )
+    if img_kc:
+        st.image(img_kc, use_column_width=True)
+    else:
+        st.warning("Keycloak image not found in assets/")
 with col2:
     st.markdown("""
 - **StatefulSet** + **Headless Service**; **DNS_PING** + **JGroups/Infinispan** replicate sessions  
