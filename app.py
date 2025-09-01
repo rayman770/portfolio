@@ -13,7 +13,12 @@ ASSETS = Path("assets")
 #   python - <<'PY'
 #   import bcrypt; print(bcrypt.hashpw(b"your-pin", bcrypt.gensalt()).decode())
 #   PY
-ACCESS_CODE_HASH = os.getenv("ACCESS_CODE_HASH", "")
+ACCESS_CODE_HASH = (
+    os.getenv("ACCESS_CODE_HASH", "") or st.secrets.get("ACCESS_CODE_HASH", "")
+)
+ACCESS_CODE = (
+    os.getenv("ACCESS_CODE", "") or st.secrets.get("ACCESS_CODE", "")
+)
 
 # ---------- Tiny Gate ----------
 def is_authed():
@@ -26,14 +31,23 @@ def is_authed():
     return False
 
 def verify_code(code: str) -> bool:
-    if not ACCESS_CODE_HASH:
-        return True  # if you forgot to set the hash, don't block access
-    try:
-        ok = bcrypt.checkpw(code.encode(), ACCESS_CODE_HASH.encode())
-    except Exception:
-        ok = False
-    st.session_state["authed"] = bool(ok)
-    return ok
+    # 1) If a bcrypt hash is configured, use it (preferred)
+    if ACCESS_CODE_HASH:
+        try:
+            ok = bcrypt.checkpw(code.encode(), ACCESS_CODE_HASH.encode())
+        except Exception:
+            ok = False
+        st.session_state["authed"] = bool(ok)
+        return ok
+    # 2) Else fall back to plaintext (constant-time compare)
+    if ACCESS_CODE:
+        ok = hmac.compare_digest(code, ACCESS_CODE)
+        st.session_state["authed"] = bool(ok)
+        return ok
+    # 3) Nothing configured → block (safer than allowing everyone)
+    st.error("No access code configured. Set ACCESS_CODE or ACCESS_CODE_HASH.")
+    st.session_state["authed"] = False
+    return False
 
 with st.sidebar:
     st.header("🔒 Access")
