@@ -4,16 +4,14 @@ from PIL import Image
 import streamlit as st
 
 # ---------- Config ----------
-st.set_page_config(page_title="Architecture Case Studies", page_icon="🧭", layout="wide")
+st.set_page_config(page_title="Architecture Improvement", page_icon="🧭", layout="wide")
 ASSETS = Path("assets")
 
-# Access control: set ONE of these in Streamlit Cloud (Settings → Secrets)
-#   ACCESS_CODE          = "jjeongarch"                 # plaintext (simple)
-#   ACCESS_CODE_HASH     = bcrypt hash of your code     # stronger
+# Access control (set ONE of these under Settings → Secrets)
 ACCESS_CODE_HASH = os.getenv("ACCESS_CODE_HASH", "") or st.secrets.get("ACCESS_CODE_HASH", "")
 ACCESS_CODE      = os.getenv("ACCESS_CODE", "")      or st.secrets.get("ACCESS_CODE", "")
 
-# ---------- Auth helpers ----------
+# ---------- Auth ----------
 def is_authed():
     if st.session_state.get("authed"):
         return True
@@ -38,13 +36,12 @@ def verify_code(code: str) -> bool:
     st.session_state["authed"] = False
     return False
 
-# ---------- Small helpers ----------
+# ---------- Helpers ----------
 def kpi(label, value, sub=""):
     c = st.container(border=True)
     c.metric(label, value, sub)
 
-def load_first(*names: str) -> Image.Image | None:
-    """Return the first image that exists under assets/, or None."""
+def load_first(*names: str):
     for n in names:
         p = ASSETS / n
         if p.exists():
@@ -53,6 +50,13 @@ def load_first(*names: str) -> Image.Image | None:
             except Exception:
                 pass
     return None
+
+def bullet_box(title: str, bullets: list[str]):
+    c = st.container(border=True)
+    c.markdown(f"**{title}**")
+    for b in bullets:
+        c.markdown(f"- {b}")
+    return c
 
 # ---------- Sidebar gate ----------
 with st.sidebar:
@@ -71,89 +75,91 @@ with st.sidebar:
     st.success("Access granted")
 
 # ---------- Header ----------
-st.title("Architecture Case Studies")
-st.caption("Interactive snapshots of recent infrastructure transformations.")
+st.title("Architecture Improvement")
+st.caption("Three recent infrastructure transformations with measurable impact.")
 
 # ============================================================
-# Case 1 — FE containerized + AKS with B/E (BFF)
+# Case 1 — FE Storage SPA → FE on AKS (BFF)
 # ============================================================
-st.subheader("1) FE containerized + AKS with B/E (BFF pattern)")
+st.subheader("1) **F/E Storage Account + B/E on AKS (SPA)** → **F/E containerized on AKS with B/E (BFF)**")
 
-img_fe = load_first(
-    "FE_Arch_Improvement.webp",
-    "fe.webp", "fe-after.webp"  # optional alternates
-)
+img_fe = load_first("FE_Arch_Improvement.webp", "fe.webp")
 col1, col2 = st.columns([1.2, 0.8])
 with col1:
-    if img_fe:
-        st.image(img_fe, use_column_width=True)
-    else:
-        st.warning("FE image not found in assets/")
+    if img_fe: st.image(img_fe, use_column_width=True)
+    else:      st.warning("FE image not found in assets/")
+
 with col2:
-    st.markdown("""
-- Frontend moved from **Storage static hosting** → **AKS pods**  
-- **Single origin** → CORS removed, lower latency  
-- Private Link from AFD → AKS; FE↔BE in-cluster (BFF)  
-- Cleaner deploys/rollback/observability
-""")
+    bullet_box("Before (SPA + public API)", [
+        "Frontend hosted on Storage static website",
+        "Browser calls **public API** through the edge → CORS & more hops",
+        "Azure Front Door routes to Storage (FE) and AKS (API) separately",
+    ])
+    bullet_box("After (BFF on AKS)", [
+        "FE containerized & deployed **with B/E** in the same AKS cluster",
+        "**Single origin** via AFD → AKS over Private Link (no CORS)",
+        "FE ↔ BE are **in-cluster** service-to-service (BFF pattern)",
+        "Simpler deploys/rollback/observability",
+    ])
     k1,k2,k3=st.columns(3)
     with k1: kpi("Latency", "↓", "fewer edge hops")
-    with k2: kpi("CORS", "eliminated")
+    with k2: kpi("CORS", "removed")
     with k3: kpi("Security", "↑", "no public API")
 
 st.divider()
 
 # ============================================================
-# Case 2 — Docker Hub proxy cache (Nexus)
+# Case 2 — Direct Docker Hub → Nexus proxy cache
 # ============================================================
-st.subheader("2) Eliminated external dependency w/ Nexus Docker proxy cache")
+st.subheader("2) **Direct pulls from Docker Hub** → **In-cluster Nexus Docker proxy (pull-through cache)**")
 
-img_proxy = load_first(
-    "Nexus_Improvement.webp",
-    "proxy.webp", "proxy-after.webp"
-)
+img_proxy = load_first("Nexus_Improvement.webp", "proxy.webp")
 col1, col2 = st.columns([1.2, 0.8])
 with col1:
-    if img_proxy:
-        st.image(img_proxy, use_column_width=True)
-    else:
-        st.warning("Nexus/Proxy image not found in assets/")
+    if img_proxy: st.image(img_proxy, use_column_width=True)
+    else:         st.warning("Nexus/Proxy image not found in assets/")
+
 with col2:
-    st.markdown("""
-- Configured **Nexus Docker proxy** in-cluster (pull-through cache)  
-- GitOps: manifests now pull from `docker-group.dev.sgarch.net`  
-- **Reliability:** AKS upgrades no longer hit Docker Hub rate limits  
-- **Performance:** cold pulls served from cache
-""")
+    bullet_box("Before (external dependency)", [
+        "Every node/pod pulled images from **Docker Hub** via Firewall SNAT",
+        "Hit **429 rate-limits** during AKS upgrades",
+        "Slow cold pulls; no in-cluster cache",
+    ])
+    bullet_box("After (internal proxy cache)", [
+        "**Nexus Docker proxy** inside AKS (pull-through cache via Ingress)",
+        "Manifests retargeted to `docker-group.dev.sgarch.net` (GitOps)",
+        "Only **cache-miss** goes to Docker Hub; reliable upgrades",
+        "Private registry endpoint improves control & auditability",
+    ])
     k1,k2=st.columns(2)
-    with k1: kpi("429 errors", "0", "during upgrades")
-    with k2: kpi("Pull time", "~60 ms", "cached layer")
+    with k1: kpi("429 errors", "0", "AKS upgrades")
+    with k2: kpi("Cold pull", "~60 ms", "cached layer")
 
 st.divider()
 
 # ============================================================
-# Case 3 — Keycloak clustering + build cache
+# Case 3 — Keycloak Deployment → StatefulSet clustering + build cache
 # ============================================================
-st.subheader("3) Keycloak: StatefulSet clustering + build cache (PVC)")
+st.subheader("3) **Keycloak Deployment + sticky sessions** → **StatefulSet clustering + build cache (PVC)**")
 
-img_kc = load_first(
-    "Kecloak After.webp",           # your current file name (with space + typo)
-    "Keycloak_Improvement.webp",    # nicer alternative if you rename later
-    "kc.webp", "kc-after.webp"
-)
+img_kc = load_first("Kecloak After.webp", "Keycloak_Improvement.webp", "kc.webp")
 col1, col2 = st.columns([1.2, 0.8])
 with col1:
-    if img_kc:
-        st.image(img_kc, use_column_width=True)
-    else:
-        st.warning("Keycloak image not found in assets/")
+    if img_kc: st.image(img_kc, use_column_width=True)
+    else:      st.warning("Keycloak image not found in assets/")
+
 with col2:
-    st.markdown("""
-- **StatefulSet** + **Headless Service**; **DNS_PING** + **JGroups/Infinispan** replicate sessions  
-- **InitContainer build-cache**: cache Quarkus build to PVC, `--optimized` start  
-- **Startup:** ~6 min → **~55 s**  
-- No sticky required; **any pod** can complete OAuth flow
-""")
+    bullet_box("Before (no clustering)", [
+        "Ran as a Deployment; tried sticky sessions at ingress",
+        "Quarkus build on each start → **~6 min cold start**",
+        "Multi-pod token exchange intermittently failed (no shared cache)",
+    ])
+    bullet_box("After (HA + fast start)", [
+        "Migrated to **StatefulSet** + **Headless Service**",
+        "**DNS_PING + JGroups/Infinispan** replicate auth/session state",
+        "InitContainer caches Quarkus build to **PVC**; Keycloak `--optimized` start",
+        "**Startup ~55 s**; any pod can complete OAuth flow",
+    ])
     k1,k2,k3=st.columns(3)
     with k1: kpi("Startup", "~55 s", "from 6+ min")
     with k2: kpi("HA", "Multi-pod", "podAntiAffinity + PDB")
