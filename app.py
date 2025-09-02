@@ -83,7 +83,7 @@ st.caption("Three recent infrastructure transformations with measurable impact."
 # ============================================================
 st.subheader("1) **F/E Storage Account + B/E on AKS (SPA)** → **F/E containerized on AKS with B/E (BFF)**")
 
-img_fe = load_first("FE Improvement.webp", "fe.webp")
+img_fe = load_first("fe.html")
 col1, col2 = st.columns([1.2, 0.8])
 with col1:
     if img_fe: st.image(img_fe, use_column_width=True)
