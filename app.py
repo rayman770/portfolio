@@ -2,6 +2,7 @@ import os, time, hmac, bcrypt
 from pathlib import Path
 from PIL import Image
 import streamlit as st
+from streamlit.components.v1 import html as html_component
 
 # ---------- Config ----------
 st.set_page_config(page_title="Architecture Improvement", page_icon="🧭", layout="wide")
@@ -42,6 +43,7 @@ def kpi(label, value, sub=""):
     c.metric(label, value, sub)
 
 def load_first(*names: str):
+    """Return the first image under assets/ that opens successfully, else None."""
     for n in names:
         p = ASSETS / n
         if p.exists():
@@ -57,6 +59,21 @@ def bullet_box(title: str, bullets: list[str]):
     for b in bullets:
         c.markdown(f"- {b}")
     return c
+
+def show_drawio_html(filename: str, height: int = 740, scrolling: bool = False) -> bool:
+    """
+    Embed a draw.io HTML export from assets/. Returns True if rendered, else False.
+    Export from draw.io with: File → Export as → HTML ✓ Include a copy of my diagram.
+    """
+    p = ASSETS / filename
+    if not p.exists():
+        return False
+    try:
+        html_str = p.read_text(encoding="utf-8", errors="ignore")
+        html_component(html_str, height=height, scrolling=scrolling)
+        return True
+    except Exception:
+        return False
 
 # ---------- Sidebar gate ----------
 with st.sidebar:
@@ -83,11 +100,13 @@ st.caption("Three recent infrastructure transformations with measurable impact."
 # ============================================================
 st.subheader("1) **F/E Storage Account + B/E on AKS (SPA)** → **F/E containerized on AKS with B/E (BFF)**")
 
-img_fe = load_first("fe.html")
 col1, col2 = st.columns([1.2, 0.8])
 with col1:
-    if img_fe: st.image(img_fe, use_column_width=True)
-    else:      st.warning("FE image not found in assets/")
+    # Try animated HTML first; fallback to image
+    if not show_drawio_html("fe.html", height=740):
+        img_fe = load_first("FE Improvement.webp", "FE_Arch_Improvement.webp", "fe.webp")
+        if img_fe: st.image(img_fe, use_column_width=True)
+        else:      st.warning("FE diagram not found (expected assets/fe.html or an image).")
 
 with col2:
     bullet_box("Before (SPA + public API)", [
@@ -157,11 +176,12 @@ st.divider()
 # ============================================================
 st.subheader("2) **Direct pulls from Docker Hub** → **In-cluster Nexus Docker proxy (pull-through cache)**")
 
-img_proxy = load_first("Nexus_Improvement.webp", "proxy.webp")
 col1, col2 = st.columns([1.2, 0.8])
 with col1:
-    if img_proxy: st.image(img_proxy, use_column_width=True)
-    else:         st.warning("Nexus/Proxy image not found in assets/")
+    if not show_drawio_html("nexus.html", height=740):
+        img_proxy = load_first("Nexus_Improvement.webp", "proxy.webp")
+        if img_proxy: st.image(img_proxy, use_column_width=True)
+        else:         st.warning("Nexus diagram not found (expected assets/nexus.html or an image).")
 
 with col2:
     bullet_box("Before (external dependency)", [
@@ -175,7 +195,7 @@ with col2:
         "Only **cache-miss** goes to Docker Hub; reliable upgrades",
         "Private registry endpoint improves control & auditability",
     ])
-    k1,k2=st.columns(2)
+    k1, k2 = st.columns(2)
     with k1: kpi("429 errors", "0", "AKS upgrades")
     with k2: kpi("Cold pull", "~60 ms", "cached layer")
 
@@ -186,11 +206,12 @@ st.divider()
 # ============================================================
 st.subheader("3) **Keycloak Deployment + sticky sessions** → **StatefulSet clustering + build cache (PVC)**")
 
-img_kc = load_first("Kecloak After.webp", "Keycloak_Improvement.webp", "kc.webp")
 col1, col2 = st.columns([1.2, 0.8])
 with col1:
-    if img_kc: st.image(img_kc, use_column_width=True)
-    else:      st.warning("Keycloak image not found in assets/")
+    if not show_drawio_html("keycloak.html", height=740):
+        img_kc = load_first("Kecloak After.webp", "Keycloak_Improvement.webp", "kc.webp")
+        if img_kc: st.image(img_kc, use_column_width=True)
+        else:      st.warning("Keycloak diagram not found (expected assets/keycloak.html or an image).")
 
 with col2:
     bullet_box("Before (no clustering)", [
@@ -204,7 +225,7 @@ with col2:
         "InitContainer caches Quarkus build to **PVC**; Keycloak `--optimized` start",
         "**Startup ~55 s**; any pod can complete OAuth flow",
     ])
-    k1,k2,k3=st.columns(3)
+    k1, k2, k3 = st.columns(3)
     with k1: kpi("Startup", "~55 s", "from 6+ min")
     with k2: kpi("HA", "Multi-pod", "podAntiAffinity + PDB")
     with k3: kpi("Auth errors", "0", "during rollout")
