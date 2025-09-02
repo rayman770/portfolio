@@ -101,10 +101,54 @@ with col2:
         "FE ↔ BE are **in-cluster** service-to-service (BFF pattern)",
         "Simpler deploys/rollback/observability",
     ])
-    k1,k2,k3=st.columns(3)
+    k1, k2 = st.columns(2)
     with k1: kpi("Latency", "↓", "fewer edge hops")
-    with k2: kpi("CORS", "removed")
-    with k3: kpi("Security", "↑", "no public API")
+    with k2: kpi("Security", "↑", "no public API")
+
+# ---- Traffic Flow ----
+st.markdown("#### Traffic Flow (Before vs. After)")
+flow = st.container(border=True)
+flow.markdown("""
+1) **Client → Azure FD**  
+   - Browser → Azure FD with WAF over HTTPS; TLS terminates at AFD  
+   - **Before:** Two hosts (F/E & B/E) ⇒ CORS required  
+   - **After:** One host ⇒ no CORS for web ↔ API  
+
+2) **Azure FD → Origin via Private Link**  
+   - AFD → **Private Endpoint (consumer)** → **Private Link Service (provider)** performs **SNAT** to the origin  
+   - **Before (F/E origin):** PLS → **Storage static website** (HTML/JS/CSS); SPA embeds API base URL  
+   - **After (AKS origin):** PLS → **Internal Standard LB** → **Nginx Ingress (AKS)**  
+
+3) **App ↔ API Call Path (Main Change)**  
+   - **Before (SPA + public API):** Browser JS calls API directly via AFD to AKS  
+   - **After (BFF):** Next.js server (FE pods) calls BE **in-cluster** via ClusterIP/Service DNS  
+     `http://be-svc.<ns>.svc.cluster.local`  
+
+4) **AKS workload egress via Firewall**  
+   - AKS subnet UDR → **Azure Firewall**; Firewall performs **SNAT** to its Public IP for internet access  
+
+5) **DNS Proxy (centralized resolution)**  
+   - Firewall forwards to **Azure DNS / Private Resolver** so Private Link names resolve correctly
+""")
+
+# ---- Transformation Highlights ----
+st.markdown("#### Transformation Highlights")
+hi = st.container(border=True)
+hi.markdown("""
+**1) Performance & Cost**  
+- In-cluster FE→BE calls (BFF) cut cross-Internet/edge hops ⇒ **lower latency**  
+- **Egress savings:** FE↔BE traffic stays inside the cluster, not over the public edge  
+
+**2) Security**  
+- Public API removed: API endpoint is **ClusterIP-only**; origin reachable only via  
+  **AFD → PE (consumer) → PLS (provider) → Internal Standard LB → Nginx Ingress (AKS)**  
+- Edge secured with **AFD WAF** + **Private Link** to origin  
+- Single controlled egress: all AKS outbound flows **SNAT** through Azure Firewall ⇒ easy allow-listing & audit  
+
+**3) DevOps & Observability**  
+- Containerized FE with BE on AKS ⇒ unified **CI/CD**, version control & fast rollback  
+- Cleaner telemetry: unified **health probes & logging**
+""")
 
 st.divider()
 
