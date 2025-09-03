@@ -11,7 +11,7 @@ ASSETS = Path("assets")
 HEIGHTS = {
     "fe_before.html": 420,
     "fe_after.html": 420,
-    "nexus_before.html": 580,   # was 360 → no more scroll
+    "nexus_before.html": 580,
     "nexus_after.html": 580,
     "keycloak_before.html": 600,
     "keycloak_after.html": 600,
@@ -167,7 +167,7 @@ st.subheader("1) F/E Storage Account + public API → F/E containerized with B/E
 left, right = st.columns([1, 1], vertical_alignment="top")
 
 with left:
-    show_drawio_or_warn("fe_before.html")  # 420
+    show_drawio_or_warn("fe_before.html")
     bullet_box("Before (SPA + public API)", [
         "Frontend hosted on **Storage static website**",
         "Browser calls **public API** through the edge → CORS & more hops",
@@ -178,7 +178,7 @@ with left:
     with c2: kpi("Surface", "wider", "public API exposed")
 
 with right:
-    show_drawio_or_warn("fe_after.html")   # 420
+    show_drawio_or_warn("fe_after.html")
     bullet_box("After (BFF on AKS)", [
         "FE containerized & deployed **with B/E** in the same AKS cluster",
         "**Single origin** via AFD → AKS over Private Link (**no CORS**)",
@@ -196,7 +196,7 @@ st.subheader("2) Direct pulls from Docker Hub → In-cluster Nexus Docker proxy 
 l2, r2 = st.columns([1, 1], vertical_alignment="top")
 
 with l2:
-    show_drawio_or_warn("nexus_before.html")   # 580
+    show_drawio_or_warn("nexus_before.html")
     bullet_box("Before (external dependency)", [
         "Every node/pod pulled images from **Docker Hub** via Firewall SNAT",
         "Hit **429 rate-limits** during AKS upgrades",
@@ -204,7 +204,7 @@ with l2:
     ])
 
 with r2:
-    show_drawio_or_warn("nexus_after.html")    # 580
+    show_drawio_or_warn("nexus_after.html")
     bullet_box("After (internal proxy cache)", [
         "**Nexus Docker proxy** inside AKS (pull-through cache via Ingress)",
         "Manifests retargeted to `docker-group.dev.sgarch.net` (GitOps)",
@@ -222,7 +222,7 @@ st.subheader("3) Keycloak Deployment + sticky sessions → StatefulSet clusterin
 l3, r3 = st.columns([1, 1], vertical_alignment="top")
 
 with l3:
-    show_drawio_or_warn("keycloak_before.html")  # 600
+    show_drawio_or_warn("keycloak_before.html")
     bullet_box("Before (no clustering)", [
         "Ran as a Deployment; sticky sessions at ingress",
         "Quarkus build on each start → **~6 min cold start**",
@@ -230,7 +230,7 @@ with l3:
     ])
 
 with r3:
-    show_drawio_or_warn("keycloak_after.html")   # 600
+    show_drawio_or_warn("keycloak_after.html")
     bullet_box("After (HA + fast start)", [
         "Migrated to **StatefulSet** + **Headless Service**",
         "**DNS_PING + JGroups/Infinispan** replicate auth/session state",
