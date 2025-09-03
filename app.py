@@ -8,6 +8,16 @@ from streamlit.components.v1 import html as html_component
 st.set_page_config(page_title="Architecture Improvement", page_icon="🧭", layout="wide")
 ASSETS = Path("assets")
 
+# Global CSS: tighten vertical spacing a bit
+st.markdown("""
+<style>
+/* tighten gaps between blocks */
+section.main .block-container { padding-top: 1.0rem; padding-bottom: 1.0rem; }
+div.stTabs [data-baseweb="tab-list"] button { padding-top: 4px; padding-bottom: 4px; }
+div.stButton > button { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+</style>
+""", unsafe_allow_html=True)
+
 # Access control (set ONE of these under Settings → Secrets)
 ACCESS_CODE_HASH = os.getenv("ACCESS_CODE_HASH", "") or st.secrets.get("ACCESS_CODE_HASH", "")
 ACCESS_CODE      = os.getenv("ACCESS_CODE", "")      or st.secrets.get("ACCESS_CODE", "")
@@ -55,29 +65,37 @@ def bullet_box(title: str, bullets: list[str]):
         c.markdown(f"- {b}")
     return c
 
-def show_drawio_html(filename: str, height: int = 740, scrolling: bool = False) -> bool:
+def show_drawio_html(filename: str, height: int = 740, scrolling: bool = False, debug: bool = False) -> bool:
     """
     Embed a draw.io HTML export from assets/. Returns True if rendered, else False.
     Export from draw.io with: File → Export as → HTML ✓ Include a copy of my diagram.
+    Some exports reference protocol-relative or http viewer scripts; normalize to https.
     """
     p = ASSETS / filename
     if not p.exists():
-        st.warning(f"Missing: assets/{filename}")
+        if debug: st.warning(f"Missing: assets/{filename}")
         return False
     try:
         html_str = p.read_text(encoding="utf-8", errors="ignore")
+        # normalize protocol-relative & http viewer script URLs to https
+        html_str = html_str.replace('src="//', 'src="https://')
+        html_str = html_str.replace("http://viewer.diagrams.net", "https://viewer.diagrams.net")
+        html_str = html_str.replace("http://app.diagrams.net", "https://app.diagrams.net")
         html_component(html_str, height=height, scrolling=scrolling)
+        if debug: st.caption(f"Rendered: assets/{filename}")
         return True
     except Exception as e:
         st.error(f"Could not embed {filename}: {e}")
         return False
 
 def show_before_after(prefix: str, before_title: str, before_bullets: list[str],
-                      after_title: str, after_bullets: list[str], height: int = 740):
+                      after_title: str, after_bullets: list[str],
+                      height: int = 740, debug: bool = False,
+                      after_kpis: list[tuple[str, str, str]] | None = None):
     """
     Render two tabs (Before / After). Each tab shows:
       - LEFT: draw.io HTML export (prefix_before.html / prefix_after.html), fallback to webp
-      - RIGHT: a summarized bullet box (Before/After)
+      - RIGHT: a summarized bullet box (Before/After) + optional KPIs (After tab)
     """
     tabs = st.tabs(["Before", "After"])
 
@@ -85,7 +103,7 @@ def show_before_after(prefix: str, before_title: str, before_bullets: list[str],
     with tabs[0]:
         colL, colR = st.columns([1.2, 0.8])
         with colL:
-            if not show_drawio_html(f"{prefix}_before.html", height=height):
+            if not show_drawio_html(f"{prefix}_before.html", height=height, debug=debug):
                 img = load_img(ASSETS / f"{prefix}_before.webp")
                 if img: st.image(img, use_column_width=True)
                 else:   st.warning(f"Also tried fallback: {prefix}_before.webp")
@@ -96,12 +114,17 @@ def show_before_after(prefix: str, before_title: str, before_bullets: list[str],
     with tabs[1]:
         colL, colR = st.columns([1.2, 0.8])
         with colL:
-            if not show_drawio_html(f"{prefix}_after.html", height=height):
+            if not show_drawio_html(f"{prefix}_after.html", height=height, debug=debug):
                 img = load_img(ASSETS / f"{prefix}_after.webp")
                 if img: st.image(img, use_column_width=True)
                 else:   st.warning(f"Also tried fallback: {prefix}_after.webp")
         with colR:
             bullet_box(after_title, after_bullets)
+            # KPIs directly under the summary to keep things visually tight
+            if after_kpis:
+                cols = st.columns(len(after_kpis))
+                for (label, value, sub), col in zip(after_kpis, cols):
+                    with col: kpi(label, value, sub)
 
 # ---------- Sidebar gate ----------
 with st.sidebar:
@@ -118,9 +141,12 @@ with st.sidebar:
                 st.error("Wrong code")
         st.stop()
     st.success("Access granted")
-    # Optional: quick inspector to debug paths
-    # if st.toggle("🛠 Assets inspector", value=False):
-    #     st.write(sorted(p.name for p in ASSETS.iterdir() if p.is_file()))
+    # Optional: quick inspector to debug assets
+    if st.toggle("🛠 Assets inspector", value=False):
+        if ASSETS.exists():
+            st.write(sorted(p.name for p in ASSETS.iterdir() if p.is_file()))
+        else:
+            st.write("assets/ directory not found")
 
 # ---------- Header ----------
 st.title("Architecture Improvement")
@@ -146,18 +172,19 @@ show_before_after(
         "FE ↔ BE are **in-cluster** service-to-service (BFF pattern)",
         "Simpler deploys/rollback/observability",
     ],
-    height=740,
+    height=700,  # slightly shorter to bring KPIs closer
+    debug=False,
+    after_kpis=[("Latency", "↓", "fewer edge hops"), ("Security", "↑", "no public API")],
 )
 
-# KPIs under the tabs (summarizing the improvement)
-k1, k2 = st.columns(2)
-with k1: kpi("Latency", "↓", "fewer edge hops")
-with k2: kpi("Security", "↑", "no public API")
+# ---- Traffic Flow & Highlights side-by-side ----
+st.markdown("#### Deep Dive")
+c1, c2 = st.columns(2)
+with c1:
+    flow = st.container(border=True)
+    flow.markdown("""
+**Traffic Flow (Before vs. After)**
 
-# ---- Traffic Flow (comprehensive) ----
-st.markdown("#### Traffic Flow (Before vs. After)")
-flow = st.container(border=True)
-flow.markdown("""
 1) **Client → Azure FD**  
    - Browser → Azure FD with WAF over HTTPS; TLS terminates at AFD  
    - **Before:** Two hosts (F/E & B/E) ⇒ CORS required  
@@ -179,24 +206,23 @@ flow.markdown("""
 5) **DNS Proxy (centralized resolution)**  
    - Firewall forwards to **Azure DNS / Private Resolver** so Private Link names resolve correctly
 """)
+with c2:
+    hi = st.container(border=True)
+    hi.markdown("""
+**Transformation Highlights**
 
-# ---- Transformation Highlights ----
-st.markdown("#### Transformation Highlights")
-hi = st.container(border=True)
-hi.markdown("""
-**1) Performance & Cost**  
-- In-cluster FE→BE calls (BFF) cut cross-Internet/edge hops ⇒ **lower latency**  
-- **Egress savings:** FE↔BE traffic stays inside the cluster, not over the public edge  
+- **Performance & Cost**  
+  In-cluster FE→BE calls (BFF) cut cross-Internet/edge hops ⇒ **lower latency**  
+  **Egress savings:** FE↔BE traffic stays inside the cluster, not over the public edge  
 
-**2) Security**  
-- Public API removed: API endpoint is **ClusterIP-only**; origin reachable only via  
+- **Security**  
+  Public API removed: API is **ClusterIP-only**; origin reachable only via  
   **AFD → PE (consumer) → PLS (provider) → Internal Standard LB → Nginx Ingress (AKS)**  
-- Edge secured with **AFD WAF** + **Private Link** to origin  
-- Single controlled egress: all AKS outbound flows **SNAT** through Azure Firewall ⇒ easy allow-listing & audit  
+  Edge secured with **AFD WAF** + **Private Link**; single controlled egress via Firewall **SNAT**  
 
-**3) DevOps & Observability**  
-- Containerized FE with BE on AKS ⇒ unified **CI/CD**, version control & fast rollback  
-- Cleaner telemetry: unified **health probes & logging**
+- **DevOps & Observability**  
+  FE & BE on AKS ⇒ unified **CI/CD**, versioning & fast rollback  
+  Cleaner telemetry: unified **health probes & logging**
 """)
 
 st.divider()
@@ -221,7 +247,7 @@ show_before_after(
         "Only **cache-miss** goes to Docker Hub; reliable upgrades",
         "Private registry endpoint improves control & auditability",
     ],
-    height=740,
+    height=700,
 )
 
 st.divider()
@@ -246,7 +272,7 @@ show_before_after(
         "InitContainer caches Quarkus build to **PVC**; Keycloak `--optimized` start",
         "**Startup ~55 s**; any pod can complete OAuth flow",
     ],
-    height=740,
+    height=700,
 )
 
 st.divider()
