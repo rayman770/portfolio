@@ -19,7 +19,6 @@ ASSETS = Path("assets")
 st.markdown(
     """
 <style>
-/* tighten some paddings */
 .block-container { padding-top: 1.2rem; }
 div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stMetric"]) { margin-top: .25rem; }
 </style>
@@ -76,7 +75,7 @@ def load_image(*names: str):
     return None
 
 
-def bullet_box(title: str, bullets: list[str]):
+def bullet_box(title: str, bullets):
     c = st.container(border=True)
     c.markdown(f"**{title}**")
     for b in bullets:
@@ -85,39 +84,29 @@ def bullet_box(title: str, bullets: list[str]):
 
 
 # ---------------------- draw.io rendering ---------------------
-def _extract_mxgraph_div(html_text: str) -> str | None:
-    """
-    Extract the <div class="mxgraph" ... data-mxgraph="..."></div> block.
-    Robust to single/double quotes and extra classes/attributes.
-    """
-    pat = (
-        r'(<div[^>]*class=(?:"[^"]*\bmxgraph\b[^"]*"|\'[^\']*\bmxgraph\b[^\']*\')'
-        r'[^>]*data-mxgraph=(?:"[^"]*"|\'[^\']*\')[^>]*>\s*</div>)'
-    )
-    m = re.search(pat, html_text, re.S | re.I)
-    return m.group(1) if m else None
-
+_MXGRAPH_DIV_RE = re.compile(
+    r'(<div[^>]*class=(?:"[^"]*\bmxgraph\b[^"]*"|\'[^\']*\bmxgraph\b[^\']*\')[^>]*'
+    r'data-mxgraph=(?:"[^"]*"|\'[^\']*\')[^>]*>\s*</div>)',
+    re.I | re.S,
+)
+_IFRAME_VIEWER_RE = re.compile(
+    r'(<iframe[^>]+src=(?:"[^"]*viewer\.diagrams\.net[^"]*"|\'[^\']*viewer\.diagrams\.net[^\']*\')[^>]*>\s*</iframe>)',
+    re.I | re.S,
+)
 
 def _inject_base_tag(doc: str) -> str:
-    """
-    Ensure the document has a <base href="https://viewer.diagrams.net/"> inside <head>.
-    Needed so viewer-static and Azure icon assets resolve properly.
-    """
     if "<base " in doc.lower():
         return doc
-    return re.sub(
-        r"(<head[^>]*>)",
-        r'\1<base href="https://viewer.diagrams.net/">',
-        doc,
-        count=1,
-        flags=re.I,
-    )
-
+    return re.sub(r"(<head[^>]*>)",
+                  r'\1<base href="https://viewer.diagrams.net/">',
+                  doc, count=1, flags=re.I)
 
 def render_drawio(filename: str, height: int = 640, scrolling: bool = False) -> bool:
     """
-    1) Try to wrap the <div class="mxgraph" ...> with viewer-static and a <base> tag (best).
-    2) Fallback to embedding the full exported HTML with <base> injected.
+    Robustly render draw.io HTML exports:
+      1) <div class="mxgraph" ... data-mxgraph=...></div>   -> wrap with viewer-static
+      2) <iframe src="https://viewer.diagrams.net/..."></iframe> -> wrap the iframe
+      3) Full HTML export -> inject <base> if missing and embed as-is
     """
     p = ASSETS / filename
     if not p.exists():
@@ -127,8 +116,10 @@ def render_drawio(filename: str, height: int = 640, scrolling: bool = False) -> 
     except Exception:
         return False
 
-    mx = _extract_mxgraph_div(raw)
-    if mx:
+    # Case 1: mxgraph div export
+    m = _MXGRAPH_DIV_RE.search(raw)
+    if m:
+        mx = m.group(1)
         wrapper = f"""<!doctype html>
 <html>
 <head>
@@ -144,8 +135,34 @@ def render_drawio(filename: str, height: int = 640, scrolling: bool = False) -> 
         html_component(wrapper, height=height, scrolling=scrolling)
         return True
 
-    raw_with_base = _inject_base_tag(raw)
-    html_component(raw_with_base, height=height, scrolling=True)
+    # Case 2: iframe export
+    i = _IFRAME_VIEWER_RE.search(raw)
+    if i:
+        iframe = i.group(1)
+        # normalize sizing to fill the container
+        iframe = re.sub(r'\sstyle="[^"]*"', '', iframe, flags=re.I)
+        iframe = re.sub(r'\swidth="[^"]*"', '', iframe, flags=re.I)
+        iframe = re.sub(r'\sheight="[^"]*"', '', iframe, flags=re.I)
+        iframe = iframe.replace("<iframe", '<iframe style="width:100%;height:100%;border:0"')
+        wrapper = f"""<!doctype html>
+<html>
+<head><meta charset="utf-8">
+<style>html,body,#holder{{height:100%;margin:0}}</style>
+</head>
+<body>
+  <div id="holder">{iframe}</div>
+</body>
+</html>"""
+        html_component(wrapper, height=height, scrolling=scrolling)
+        return True
+
+    # Case 3: full HTML export
+    if "<html" in raw.lower():
+        html_component(_inject_base_tag(raw), height=height, scrolling=True)
+        return True
+
+    # Unknown format – just dump as-is (best effort)
+    html_component(raw, height=height, scrolling=True)
     return True
 
 
@@ -215,7 +232,7 @@ with right:
     with k1: kpi("Latency", "↓", "fewer edge hops")
     with k2: kpi("Security", "↑", "no public API")
 
-# Extra detail kept from original
+# Extra detail
 lf, rt = st.columns(2, vertical_alignment="top")
 with lf:
     st.markdown("#### Traffic Flow (Before vs. After)")
@@ -270,7 +287,7 @@ st.subheader("2) Direct pulls from Docker Hub → In-cluster Nexus Docker proxy 
 left, right = st.columns(2, vertical_alignment="top")
 
 with left:
-    show_drawio_or_image("nexus_before.html", "nexus_before.webp")
+    show_drawio_or_image("nexus.html", "nexus_before.webp")
     bullet_box("Before (external dependency)", [
         "Every node/pod pulled images from **Docker Hub** via Firewall SNAT",
         "Hit **429 rate-limits** during AKS upgrades",
@@ -278,7 +295,7 @@ with left:
     ])
 
 with right:
-    show_drawio_or_image("nexus_after.html", "nexus_after.webp")
+    show_drawio_or_image("nexus.html", "nexus_after.webp")
     bullet_box("After (internal proxy cache)", [
         "**Nexus Docker proxy** inside AKS (pull-through cache via Ingress)",
         "Manifests retargeted to `docker-group.dev.sgarch.net` (GitOps)",
@@ -297,7 +314,7 @@ st.subheader("3) Keycloak Deployment + sticky sessions → StatefulSet clusterin
 left, right = st.columns(2, vertical_alignment="top")
 
 with left:
-    show_drawio_or_image("keycloak_before.html", "keycloak_before.webp")
+    show_drawio_or_image("keycloak.html", "keycloak_before.webp")
     bullet_box("Before (no clustering)", [
         "Ran as a Deployment; sticky sessions at ingress",
         "Quarkus build on each start → **~6 min cold start**",
@@ -305,7 +322,7 @@ with left:
     ])
 
 with right:
-    show_drawio_or_image("keycloak_after.html", "keycloak_after.webp")
+    show_drawio_or_image("keycloak.html", "keycloak_after.webp")
     bullet_box("After (HA + fast start)", [
         "Migrated to **StatefulSet** + **Headless Service**",
         "**DNS_PING + JGroups/Infinispan** replicate auth/session state",
