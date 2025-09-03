@@ -219,28 +219,43 @@ st.divider()
 
 # ============================ Case 2 ============================
 st.subheader("2) Keycloak Deployment + sticky sessions → StatefulSet clustering + build cache (PVC)")
-l3, r3 = st.columns([1, 1], vertical_alignment="top")
+col_flow, col_hi = st.columns([1, 1], vertical_alignment="top")
 
-with l3:
-    show_drawio_or_warn("keycloak_before.html", height=600)  # taller, no inner scroll
-    bullet_box("Before - Deployment + Sticky session (no clustering)", [
-        "Ran as a Deployment; sticky sessions at ingress",
-        "Quarkus build on each start → **~6 min cold start**",
-        "Multi-pod token exchange failed at times (no shared cache)",
-    ])
+with col_flow:
+    st.markdown("#### Before - Deployment + Sticky session (no clustering)")
+    flow = st.container(border=True)
+    flow.markdown("""
+1) **Topology**  
+   - Keycloak runs as a Deployment (single or attampted multi-pods)  
+   - Ingress coockie-based sticky session enabled to try to keep requests on one pod 
 
-with r3:
-    show_drawio_or_warn("keycloak_after.html", height=600)   # taller, no inner scroll
-    bullet_box("After (HA + fast start)", [
-        "Migrated to **StatefulSet** + **Headless Service**",
-        "**DNS_PING + JGroups/Infinispan** replicate auth/session state",
-        "InitContainer caches Quarkus build to **PVC**; Keycloak `--optimized` start",
-        "**Startup ~55 s**; any pod can complete OAuth flow",
-    ])
-    c1, c2, c3 = st.columns(3)
-    with c1: kpi("Startup", "~55 s", "from 6+ min")
-    with c2: kpi("HA", "Multi-pod", "podAntiAffinity + PDB")
-    with c3: kpi("Auth errors", "0", "during rollout")
+2) **Symptoms / Risks**  
+   - **Cold start ~ 6 min**: Quarkus build executed on every container start 
+   - Token exchange intermittently failed with multiple pods when the auth flow landed on different pods **(no shared session/cache)**
+   - Sticky session only exists at ingress level. No guarantee the session to the pod level
+   - Due to the token exchange error, HA was limited, resulting in low reliability
+""")
+
+with col_hi:
+    st.markdown("#### After - Statefulset with Pod Clustering + Build Cache")
+    hi = st.container(border=True)
+    hi.markdown("""
+1) **Topology**  
+- Migrated to **StatefulSet (multi-pods)**, spread across nodes with **podAntiAffinity** for HA
+- Added **Headless service** keycloak-headless (clusterIP: None) for peer discovery
+- DNS_PING: pods resolve keycloak-headless.ns.svc → per-pod A record (keycloak-0.keycloak-headless.ns.svc.cluster.local, keycloak-1...)
+- JGroups transport + Infinispan share sessions/auth caches; pod↔pod → requests can land on **any pod**
+
+2) **Startup time optimization (6min → 1min)**  
+- InitContainer checks a build marker in pod-scoped PVC
+    - if [ ! -f /build/build-done.marker ]; then kc.sh build && touch /build/build-done.marker
+    - else echo "Build Skipped (marker exists)"
+- Add --optimized option: kc.sh start --optimized
+""")
+    c1, c2 = st.columns(2)
+    with c1: kpi("Startup", "x6 Faster", "6 min → 55 s")
+    with c2: kpi("High Availability", "Multi-pod", "podAntiAffinity")
+    # with c3: kpi("Auth errors", "0", "during rollout")
 
 st.divider()
 
