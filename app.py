@@ -10,12 +10,12 @@ ASSETS = Path("assets")
 
 # Per-file heights so diagrams fit without internal scrollbars
 HEIGHTS = {
-    "fe_before.html": 440,
-    "fe_after.html": 440,
-    "nexus_before.html": 760,   # bigger to avoid inner scroll
-    "nexus_after.html": 760,
-    "keycloak_before.html": 820,
-    "keycloak_after.html": 820,
+    "fe_before.html": 460,
+    "fe_after.html": 460,
+    "nexus_before.html": 820,
+    "nexus_after.html": 820,
+    "keycloak_before.html": 880,
+    "keycloak_after.html": 880,
 }
 
 # light spacing trim
@@ -34,9 +34,11 @@ ACCESS_CODE      = os.getenv("ACCESS_CODE", "")      or st.secrets.get("ACCESS_C
 def is_authed():
     if st.session_state.get("authed"):
         return True
-    qp = st.experimental_get_query_params()
+    # use modern API (avoid deprecation)
+    qp = st.query_params
     if "code" in qp and qp["code"]:
-        return verify_code(qp["code"][0])
+        # qp["code"] is a string
+        return verify_code(qp["code"])
     return False
 
 def verify_code(code: str) -> bool:
@@ -77,10 +79,7 @@ def _extract_mxgraph_div(html_text: str) -> Optional[str]:
     return m.group(1) if m else None
 
 def _inject_base_tag(doc: str) -> str:
-    """
-    Insert <base href="https://viewer.diagrams.net/"> right after <head> (once).
-    Uses a lambda to avoid any accidental \\1 literal output.
-    """
+    """Insert <base href="https://viewer.diagrams.net/"> right after <head> (once)."""
     if re.search(r"<base\s", doc, re.I):
         return doc
     return re.sub(
@@ -91,11 +90,30 @@ def _inject_base_tag(doc: str) -> str:
         flags=re.I,
     )
 
+def _ensure_viewer_script(doc: str) -> str:
+    """Make sure viewer-static.min.js is present (some exports omit it)."""
+    if "viewer-static.min.js" in doc:
+        return doc
+    insertion = '<script src="https://viewer.diagrams.net/js/viewer-static.min.js"></script>'
+    return re.sub(
+        r"(</head>)",
+        lambda m: insertion + m.group(1),
+        doc,
+        count=1,
+        flags=re.I,
+    )
+
+def _prepare_full_export(doc: str) -> str:
+    """For full HTML exports: add <base> and the viewer script if needed."""
+    doc = _inject_base_tag(doc)
+    doc = _ensure_viewer_script(doc)
+    return doc
+
 def render_drawio(filename: str, height: Optional[int] = None, scrolling: bool = False) -> bool:
     """
     Robust Draw.io/diagrams.net renderer for HTML exports.
     1) If an mxgraph <div> exists, wrap it with viewer-static and a <base>.
-    2) Otherwise embed the full HTML but ensure it has a <base>.
+    2) Otherwise embed the full HTML but ensure it has a <base> and viewer script.
     """
     p = ASSETS / filename
     if not p.exists():
@@ -105,7 +123,7 @@ def render_drawio(filename: str, height: Optional[int] = None, scrolling: bool =
     except Exception:
         return False
 
-    h = height or HEIGHTS.get(filename, 540)
+    h = height or HEIGHTS.get(filename, 560)
 
     mx = _extract_mxgraph_div(raw)
     if mx:
@@ -129,9 +147,9 @@ def render_drawio(filename: str, height: Optional[int] = None, scrolling: bool =
         html_component(wrapper, height=h, scrolling=scrolling)
         return True
 
-    # Fallback: embed the full export but make sure it can resolve relative assets
-    raw_with_base = _inject_base_tag(raw)
-    html_component(raw_with_base, height=h, scrolling=scrolling)
+    # Fallback: full export — ensure it has what it needs
+    doc = _prepare_full_export(raw)
+    html_component(doc, height=h, scrolling=scrolling)
     return True
 
 def show_drawio_or_warn(html_name: str, height: Optional[int] = None):
