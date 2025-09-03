@@ -174,7 +174,7 @@ show_before_after(
     ],
     height=700,  # slightly shorter to bring KPIs closer
     debug=False,
-    after_kpis=[("Latency", "↓", "fewer edge hops"), ("Security", "↑", "no public API")],
+    after_kpis=[("Latency", "fewer edge hops"), ("Security", "no public API")],
 )
 
 # ---- Traffic Flow & Highlights side-by-side ----
