@@ -61,15 +61,15 @@ def _extract_mxgraph_div(html_text: str):
     Find a <div ... class="mxgraph" ... data-mxgraph="..."></div>
     Accepts single/double quotes, class order, extra classes, and whitespace.
     """
-    pat = r'(<div[^>]*class=(?:"[^"]*\bmxgraph\b[^"]*"|\'[^\']*\bmxgraph\b[^\']*\')[^>]*data-mxgraph=(?:"[^"]*"|\'[^\']*\')[^>]*>\s*</div>)'
+    pat = r'(<div[^>]*class=(?:"[^"]*\\bmxgraph\\b[^"]*"|\'[^\']*\\bmxgraph\\b[^\']*\')[^>]*data-mxgraph=(?:"[^"]*"|\'[^\']*\')[^>]*>\\s*</div>)'
     m = re.search(pat, html_text, re.I | re.S)
     return m.group(1) if m else None
 
 def _inject_base_tag(doc: str) -> str:
     """Insert <base href="https://viewer.diagrams.net/"> right after <head> (once)."""
-    if re.search(r"<base\s", doc, re.I):
+    if re.search(r"<base\\s", doc, re.I):
         return doc
-    # Use a callable to avoid any accidental literal backreference like "\1"
+    # Use a callable to avoid stray "\1" appearing in the output
     def repl(m: re.Match) -> str:
         return m.group(1) + '<base href="https://viewer.diagrams.net/">'
     return re.sub(r"(<head[^>]*>)", repl, doc, count=1, flags=re.I)
