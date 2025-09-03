@@ -62,40 +62,46 @@ def show_drawio_html(filename: str, height: int = 740, scrolling: bool = False) 
     """
     p = ASSETS / filename
     if not p.exists():
+        st.warning(f"Missing: assets/{filename}")
         return False
     try:
         html_str = p.read_text(encoding="utf-8", errors="ignore")
         html_component(html_str, height=height, scrolling=scrolling)
         return True
-    except Exception:
+    except Exception as e:
+        st.error(f"Could not embed {filename}: {e}")
         return False
 
-def show_before_after(prefix: str, height: int = 740):
+def show_before_after(prefix: str, before_title: str, before_bullets: list[str],
+                      after_title: str, after_bullets: list[str], height: int = 740):
     """
-    Render two tabs: Before / After.
-    Tries <prefix>_before.html / <prefix>_after.html first.
-    Falls back to <prefix>_before.webp / <prefix>_after.webp if HTML Missing.
+    Render two tabs (Before / After). Each tab shows:
+      - LEFT: draw.io HTML export (prefix_before.html / prefix_after.html), fallback to webp
+      - RIGHT: a summarized bullet box (Before/After)
     """
-    before_html = f"{prefix}_before.html"
-    after_html  = f"{prefix}_after.html"
-    before_img  = ASSETS / f"{prefix}_before.webp"
-    after_img   = ASSETS / f"{prefix}_after.webp"
-
     tabs = st.tabs(["Before", "After"])
 
+    # Before tab
     with tabs[0]:
-        if not show_drawio_html(before_html, height=height):
-            if before_img.exists() and (img := load_img(before_img)):
-                st.image(img, use_column_width=True)
-            else:
-                st.warning(f"Missing: assets/{before_html} (or {before_img.name})")
+        colL, colR = st.columns([1.2, 0.8])
+        with colL:
+            if not show_drawio_html(f"{prefix}_before.html", height=height):
+                img = load_img(ASSETS / f"{prefix}_before.webp")
+                if img: st.image(img, use_column_width=True)
+                else:   st.warning(f"Also tried fallback: {prefix}_before.webp")
+        with colR:
+            bullet_box(before_title, before_bullets)
 
+    # After tab
     with tabs[1]:
-        if not show_drawio_html(after_html, height=height):
-            if after_img.exists() and (img := load_img(after_img)):
-                st.image(img, use_column_width=True)
-            else:
-                st.warning(f"Missing: assets/{after_html} (or {after_img.name})")
+        colL, colR = st.columns([1.2, 0.8])
+        with colL:
+            if not show_drawio_html(f"{prefix}_after.html", height=height):
+                img = load_img(ASSETS / f"{prefix}_after.webp")
+                if img: st.image(img, use_column_width=True)
+                else:   st.warning(f"Also tried fallback: {prefix}_after.webp")
+        with colR:
+            bullet_box(after_title, after_bullets)
 
 # ---------- Sidebar gate ----------
 with st.sidebar:
@@ -112,6 +118,9 @@ with st.sidebar:
                 st.error("Wrong code")
         st.stop()
     st.success("Access granted")
+    # Optional: quick inspector to debug paths
+    # if st.toggle("🛠 Assets inspector", value=False):
+    #     st.write(sorted(p.name for p in ASSETS.iterdir() if p.is_file()))
 
 # ---------- Header ----------
 st.title("Architecture Improvement")
@@ -122,27 +131,30 @@ st.caption("Three recent infrastructure transformations with measurable impact."
 # ============================================================
 st.subheader("1) **F/E Storage Account + B/E on AKS (SPA)** → **F/E containerized on AKS with B/E (BFF)**")
 
-col1, col2 = st.columns([1.2, 0.8])
-with col1:
-    show_before_after("fe", height=740)
-
-with col2:
-    bullet_box("Before (SPA + public API)", [
+show_before_after(
+    prefix="fe",
+    before_title="Before (SPA + public API)",
+    before_bullets=[
         "Frontend hosted on Storage static website",
         "Browser calls **public API** through the edge → CORS & more hops",
         "Azure Front Door routes to Storage (FE) and AKS (API) separately",
-    ])
-    bullet_box("After (BFF on AKS)", [
+    ],
+    after_title="After (BFF on AKS)",
+    after_bullets=[
         "FE containerized & deployed **with B/E** in the same AKS cluster",
         "**Single origin** via AFD → AKS over Private Link (no CORS)",
         "FE ↔ BE are **in-cluster** service-to-service (BFF pattern)",
         "Simpler deploys/rollback/observability",
-    ])
-    k1, k2 = st.columns(2)
-    with k1: kpi("Latency", "↓", "fewer edge hops")
-    with k2: kpi("Security", "↑", "no public API")
+    ],
+    height=740,
+)
 
-# ---- Traffic Flow ----
+# KPIs under the tabs (summarizing the improvement)
+k1, k2 = st.columns(2)
+with k1: kpi("Latency", "↓", "fewer edge hops")
+with k2: kpi("Security", "↑", "no public API")
+
+# ---- Traffic Flow (comprehensive) ----
 st.markdown("#### Traffic Flow (Before vs. After)")
 flow = st.container(border=True)
 flow.markdown("""
@@ -194,25 +206,23 @@ st.divider()
 # ============================================================
 st.subheader("2) **Direct pulls from Docker Hub** → **In-cluster Nexus Docker proxy (pull-through cache)**")
 
-col1, col2 = st.columns([1.2, 0.8])
-with col1:
-    show_before_after("nexus", height=740)
-
-with col2:
-    bullet_box("Before (external dependency)", [
+show_before_after(
+    prefix="nexus",
+    before_title="Before (external dependency)",
+    before_bullets=[
         "Every node/pod pulled images from **Docker Hub** via Firewall SNAT",
         "Hit **429 rate-limits** during AKS upgrades",
         "Slow cold pulls; no in-cluster cache",
-    ])
-    bullet_box("After (internal proxy cache)", [
+    ],
+    after_title="After (internal proxy cache)",
+    after_bullets=[
         "**Nexus Docker proxy** inside AKS (pull-through cache via Ingress)",
         "Manifests retargeted to `docker-group.dev.sgarch.net` (GitOps)",
         "Only **cache-miss** goes to Docker Hub; reliable upgrades",
         "Private registry endpoint improves control & auditability",
-    ])
-    k1, k2 = st.columns(2)
-    with k1: kpi("429 errors", "0", "AKS upgrades")
-    with k2: kpi("Cold pull", "~60 ms", "cached layer")
+    ],
+    height=740,
+)
 
 st.divider()
 
@@ -221,26 +231,23 @@ st.divider()
 # ============================================================
 st.subheader("3) **Keycloak Deployment + sticky sessions** → **StatefulSet clustering + build cache (PVC)**")
 
-col1, col2 = st.columns([1.2, 0.8])
-with col1:
-    show_before_after("keycloak", height=740)
-
-with col2:
-    bullet_box("Before (no clustering)", [
+show_before_after(
+    prefix="keycloak",
+    before_title="Before (no clustering)",
+    before_bullets=[
         "Ran as a Deployment; tried sticky sessions at ingress",
         "Quarkus build on each start → **~6 min cold start**",
         "Multi-pod token exchange intermittently failed (no shared cache)",
-    ])
-    bullet_box("After (HA + fast start)", [
+    ],
+    after_title="After (HA + fast start)",
+    after_bullets=[
         "Migrated to **StatefulSet** + **Headless Service**",
         "**DNS_PING + JGroups/Infinispan** replicate auth/session state",
         "InitContainer caches Quarkus build to **PVC**; Keycloak `--optimized` start",
         "**Startup ~55 s**; any pod can complete OAuth flow",
-    ])
-    k1, k2, k3 = st.columns(3)
-    with k1: kpi("Startup", "~55 s", "from 6+ min")
-    with k2: kpi("HA", "Multi-pod", "podAntiAffinity + PDB")
-    with k3: kpi("Auth errors", "0", "during rollout")
+    ],
+    height=740,
+)
 
 st.divider()
 st.write("📄 Download the static PDF version:  ", "[resume.pdf](resume.pdf)")
