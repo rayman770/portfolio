@@ -3,6 +3,59 @@ from pathlib import Path
 from PIL import Image
 import streamlit as st
 from streamlit.components.v1 import html as html_component
+import re
+from streamlit.components.v1 import html as html_component
+
+def _extract_mxgraph_div(html_text: str) -> str | None:
+    # tolerant extractor: accepts any classes order and spacing
+    pat = r'(<div[^>]*class=(?:"[^"]*\bmxgraph\b[^"]*"|\'[^\']*\bmxgraph\b[^\']*\')[^>]*data-mxgraph=(?:"[^"]*"|\'[^\']*\')[^>]*>\s*</div>)'
+    m = re.search(pat, html_text, re.I | re.S)
+    return m.group(1) if m else None
+
+def _inject_base_tag(doc: str) -> str:
+    # Insert <base> right after <head> (if not present)
+    if "<base " in doc.lower():
+        return doc
+    return re.sub(
+        r"(<head[^>]*>)",
+        r'\1<base href="https://viewer.diagrams.net/">',
+        doc,
+        count=1,
+        flags=re.I,
+    )
+
+def render_drawio(filename: str, height: int = 640, scrolling: bool = False) -> bool:
+    p = ASSETS / filename
+    if not p.exists():
+        return False
+    try:
+        raw = p.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return False
+
+    # 1) Best path: wrap the mxgraph div with viewer + <base>
+    mx = _extract_mxgraph_div(raw)
+    if mx:
+        wrapper = f"""<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<base href="https://viewer.diagrams.net/">
+<script src="https://viewer.diagrams.net/js/viewer-static.min.js"></script>
+<style>html,body,#holder{{height:100%;margin:0}} #holder>div{{height:100%}}</style>
+</head>
+<body>
+  <div id="holder">{mx}</div>
+</body>
+</html>"""
+        html_component(wrapper, height=height, scrolling=scrolling)
+        return True
+
+    # 2) Fallback: embed the full export but make sure it has <base>
+    raw_with_base = _inject_base_tag(raw)
+    html_component(raw_with_base, height=height, scrolling=True)
+    return True
+
 
 # --------------------------- Config ---------------------------
 st.set_page_config(page_title="Architecture Improvement", page_icon="🧭", layout="wide")
