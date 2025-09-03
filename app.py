@@ -7,14 +7,11 @@ from streamlit.components.v1 import html as html_component
 st.set_page_config(page_title="Architecture Improvement", page_icon="🧭", layout="wide")
 ASSETS = Path("assets")
 
-# light spacing + tighter gap under iframes (diagrams)
+# light spacing trim
 st.markdown("""
 <style>
 .block-container { padding-top: 1.2rem; }
-/* nudge metric cards a bit closer */
 div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stMetric"]) { margin-top: .25rem; }
-/* reduce space under any embedded <iframe> (components.html) */
-div[data-testid="stVerticalBlock"] > div:has(> iframe) { margin-bottom: .5rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -26,10 +23,9 @@ ACCESS_CODE      = os.getenv("ACCESS_CODE", "")      or st.secrets.get("ACCESS_C
 def is_authed():
     if st.session_state.get("authed"):
         return True
-    # modern API (avoids deprecation warnings)
-    qp = st.query_params
+    qp = st.experimental_get_query_params()  # kept as-is to match your working version
     if "code" in qp and qp["code"]:
-        return verify_code(qp["code"])
+        return verify_code(qp["code"][0])
     return False
 
 def verify_code(code: str) -> bool:
@@ -64,7 +60,6 @@ def _extract_mxgraph_div(html_text: str):
     """
     Find a <div ... class="mxgraph" ... data-mxgraph="..."></div>
     Accepts single/double quotes, class order, extra classes, and whitespace.
-    (This pattern is the proven-good one from your working version.)
     """
     pat = r'(<div[^>]*class=(?:"[^"]*\\bmxgraph\\b[^"]*"|\'[^\']*\\bmxgraph\\b[^\']*\')[^>]*data-mxgraph=(?:"[^"]*"|\'[^\']*\')[^>]*>\\s*</div>)'
     m = re.search(pat, html_text, re.I | re.S)
@@ -74,7 +69,7 @@ def _inject_base_tag(doc: str) -> str:
     """Insert <base href="https://viewer.diagrams.net/"> right after <head> (once)."""
     if re.search(r"<base\\s", doc, re.I):
         return doc
-    # Use callable replacer to avoid stray "\1" showing up
+    # Use a callable to avoid stray "\1" appearing in the output
     def repl(m: re.Match) -> str:
         return m.group(1) + '<base href="https://viewer.diagrams.net/">'
     return re.sub(r"(<head[^>]*>)", repl, doc, count=1, flags=re.I)
@@ -160,7 +155,9 @@ with left:
         "Browser calls **public API** through the edge → CORS & more hops",
         "Azure Front Door routes to Storage (FE) and AKS (API) separately",
     ])
-    # (Requested) No KPI boxes on the BEFORE side
+    c1, c2 = st.columns(2)
+    with c1: kpi("Latency", "↑", "edge hops + CORS")
+    with c2: kpi("Surface", "wider", "public API exposed")
 
 with right:
     show_drawio_or_warn("fe_after.html", height=420)
@@ -174,46 +171,6 @@ with right:
     with c1: kpi("Latency", "↓", "fewer edge hops")
     with c2: kpi("Security", "↑", "no public API")
 
-# ---- Details (restored) ----
-st.markdown("#### Traffic Flow (Before vs. After)")
-flow = st.container(border=True)
-flow.markdown("""
-1) **Client → Azure FD**  
-   - Browser → Azure FD with WAF (TLS at AFD)  
-   - **Before:** Two hosts (F/E & B/E) ⇒ CORS required  
-   - **After:** Single host ⇒ no CORS for web ↔ API  
-
-2) **AFD → Origin via Private Link**  
-   - AFD → **PE (consumer)** → **PLS (provider)** performs **SNAT**  
-   - **Before (F/E origin):** PLS → **Storage static website** (HTML/JS/CSS)  
-   - **After (AKS origin):** PLS → **Internal Standard LB** → **Nginx Ingress (AKS)**  
-
-3) **App ↔ API path**  
-   - **Before:** Browser JS calls API directly via AFD to AKS  
-   - **After:** FE server (pods) calls BE **in-cluster** via `ClusterIP/DNS`  
-     `http://be-svc.<ns>.svc.cluster.local`  
-
-4) **AKS egress** → **Azure Firewall** (SNAT to public IP)  
-
-5) **DNS Proxy** → Azure DNS / Private Resolver for Private Link names
-""")
-
-st.markdown("#### Transformation Highlights")
-hi = st.container(border=True)
-hi.markdown("""
-**Performance & Cost**  
-- In-cluster FE→BE calls cut Internet/edge hops ⇒ **lower latency**  
-- **Egress savings**: FE↔BE stays inside the cluster  
-
-**Security**  
-- Public API removed (API is **ClusterIP-only**)  
-- Origin reachable only via **AFD → PE → PLS → ILB → Ingress**  
-- Single controlled egress (Firewall **SNAT**) ⇒ simpler allow-listing & audit  
-
-**DevOps & Observability**  
-- Unified **CI/CD** & rollbacks; cleaner **health probes / logging**
-""")
-
 st.divider()
 
 # ============================ Case 2 ============================
@@ -221,7 +178,7 @@ st.subheader("2) Direct pulls from Docker Hub → In-cluster Nexus Docker proxy 
 l2, r2 = st.columns([1, 1], vertical_alignment="top")
 
 with l2:
-    show_drawio_or_warn("nexus_before.html", height=360)
+    show_drawio_or_warn("nexus_before.html", height=820)  # taller, no inner scroll
     bullet_box("Before (external dependency)", [
         "Every node/pod pulled images from **Docker Hub** via Firewall SNAT",
         "Hit **429 rate-limits** during AKS upgrades",
@@ -229,7 +186,7 @@ with l2:
     ])
 
 with r2:
-    show_drawio_or_warn("nexus_after.html", height=360)
+    show_drawio_or_warn("nexus_after.html", height=820)   # taller, no inner scroll
     bullet_box("After (internal proxy cache)", [
         "**Nexus Docker proxy** inside AKS (pull-through cache via Ingress)",
         "Manifests retargeted to `docker-group.dev.sgarch.net` (GitOps)",
@@ -244,11 +201,10 @@ st.divider()
 
 # ============================ Case 3 ============================
 st.subheader("3) Keycloak Deployment + sticky sessions → StatefulSet clustering + build cache (PVC)")
-# Reduce the diagram height a touch + CSS above removes extra gap below iframes
 l3, r3 = st.columns([1, 1], vertical_alignment="top")
 
 with l3:
-    show_drawio_or_warn("keycloak_before.html", height=320)
+    show_drawio_or_warn("keycloak_before.html", height=900)  # taller, no inner scroll
     bullet_box("Before (no clustering)", [
         "Ran as a Deployment; sticky sessions at ingress",
         "Quarkus build on each start → **~6 min cold start**",
@@ -256,7 +212,7 @@ with l3:
     ])
 
 with r3:
-    show_drawio_or_warn("keycloak_after.html", height=320)
+    show_drawio_or_warn("keycloak_after.html", height=900)   # taller, no inner scroll
     bullet_box("After (HA + fast start)", [
         "Migrated to **StatefulSet** + **Headless Service**",
         "**DNS_PING + JGroups/Infinispan** replicate auth/session state",
