@@ -91,8 +91,8 @@ def _extract_mxgraph_div(html_text: str) -> str | None:
     Robust to single/double quotes and extra classes/attributes.
     """
     pat = (
-        r'(<div[^>]*class=(?:"[^"]*\\bmxgraph\\b[^"]*"|\'[^\']*\\bmxgraph\\b[^\']*\')'
-        r'[^>]*data-mxgraph=(?:"[^"]*"|\'[^\']*\')[^>]*>\\s*</div>)'
+        r'(<div[^>]*class=(?:"[^"]*\bmxgraph\b[^"]*"|\'[^\']*\bmxgraph\b[^\']*\')'
+        r'[^>]*data-mxgraph=(?:"[^"]*"|\'[^\']*\')[^>]*>\s*</div>)'
     )
     m = re.search(pat, html_text, re.S | re.I)
     return m.group(1) if m else None
@@ -188,38 +188,34 @@ st.caption("Three recent infrastructure transformations with measurable impact."
 
 
 # ===================== Case 1 =====================
-st.subheader("1) **F/E Storage Account + B/E on AKS (SPA)** → **F/E containerized on AKS with B/E (BFF)**")
-tab_b1, tab_a1 = st.tabs(["Before", "After"])
+st.subheader("1) F/E Storage Account + public API → F/E containerized with B/E (BFF on AKS)")
 
-with tab_b1:
-    c1, c2 = st.columns([1.2, 0.8], vertical_alignment="top")
-    with c1:
-        show_drawio_or_image("fe_before.html", "fe_before.webp")
-    with c2:
-        bullet_box("Before (SPA + public API)", [
-            "Frontend hosted on **Storage static website**",
-            "Browser calls **public API** through the edge → CORS & more hops",
-            "Azure Front Door routes to Storage (FE) and AKS (API) separately",
-        ])
-        a1, a2 = st.columns(2)
-        with a1: kpi("Latency", "↑", "edge hops + CORS")
-        with a2: kpi("Surface", "wider", "public API exposed")
+left, right = st.columns(2, vertical_alignment="top")
 
-with tab_a1:
-    c1, c2 = st.columns([1.2, 0.8], vertical_alignment="top")
-    with c1:
-        show_drawio_or_image("fe_after.html", "fe_after.webp")
-    with c2:
-        bullet_box("After (BFF on AKS)", [
-            "FE containerized & deployed **with B/E** in the same AKS cluster",
-            "**Single origin** via AFD → AKS over Private Link (**no CORS**)",
-            "FE ↔ BE are **in-cluster** service-to-service (**BFF** pattern)",
-            "Simpler deploys / rollback / observability",
-        ])
-        a1, a2 = st.columns(2)
-        with a1: kpi("Latency", "↓", "fewer edge hops")
-        with a2: kpi("Security", "↑", "no public API")
+with left:
+    show_drawio_or_image("fe_before.html", "fe_before.webp")
+    bullet_box("Before (SPA + public API)", [
+        "Frontend hosted on **Storage static website**",
+        "Browser calls **public API** through the edge → CORS & more hops",
+        "Azure Front Door routes to Storage (FE) and AKS (API) separately",
+    ])
+    k1, k2 = st.columns(2)
+    with k1: kpi("Latency", "↑", "edge hops + CORS")
+    with k2: kpi("Surface", "wider", "public API exposed")
 
+with right:
+    show_drawio_or_image("fe_after.html", "fe_after.webp")
+    bullet_box("After (BFF on AKS)", [
+        "FE containerized & deployed **with B/E** in the same AKS cluster",
+        "**Single origin** via AFD → AKS over Private Link (**no CORS**)",
+        "FE ↔ BE are **in-cluster** service-to-service (**BFF** pattern)",
+        "Simpler deploys / rollback / observability",
+    ])
+    k1, k2 = st.columns(2)
+    with k1: kpi("Latency", "↓", "fewer edge hops")
+    with k2: kpi("Security", "↑", "no public API")
+
+# Extra detail kept from original
 lf, rt = st.columns(2, vertical_alignment="top")
 with lf:
     st.markdown("#### Traffic Flow (Before vs. After)")
@@ -269,67 +265,57 @@ with rt:
 st.divider()
 
 # ===================== Case 2 =====================
-st.subheader("2) **Direct pulls from Docker Hub** → **In-cluster Nexus Docker proxy (pull-through cache)**")
-tab_b2, tab_a2 = st.tabs(["Before", "After"])
+st.subheader("2) Direct pulls from Docker Hub → In-cluster Nexus Docker proxy (pull-through cache)")
 
-with tab_b2:
-    c1, c2 = st.columns([1.2, 0.8], vertical_alignment="top")
-    with c1:
-        show_drawio_or_image("nexus_before.html", "nexus_before.webp")
-    with c2:
-        bullet_box("Before (external dependency)", [
-            "Every node/pod pulled images from **Docker Hub** via Firewall SNAT",
-            "Hit **429 rate-limits** during AKS upgrades",
-            "Slow cold pulls; no in-cluster cache",
-        ])
+left, right = st.columns(2, vertical_alignment="top")
 
-with tab_a2:
-    c1, c2 = st.columns([1.2, 0.8], vertical_alignment="top")
-    with c1:
-        show_drawio_or_image("nexus_after.html", "nexus_after.webp")
-    with c2:
-        bullet_box("After (internal proxy cache)", [
-            "**Nexus Docker proxy** inside AKS (pull-through cache via Ingress)",
-            "Manifests retargeted to `docker-group.dev.sgarch.net` (GitOps)",
-            "Only **cache-miss** goes to Docker Hub; reliable upgrades",
-            "Private registry endpoint improves control & auditability",
-        ])
-        a1, a2 = st.columns(2)
-        with a1: kpi("429 errors", "0", "during upgrades")
-        with a2: kpi("Cold pull", "~60 ms", "cached layer")
+with left:
+    show_drawio_or_image("nexus_before.html", "nexus_before.webp")
+    bullet_box("Before (external dependency)", [
+        "Every node/pod pulled images from **Docker Hub** via Firewall SNAT",
+        "Hit **429 rate-limits** during AKS upgrades",
+        "Slow cold pulls; no in-cluster cache",
+    ])
+
+with right:
+    show_drawio_or_image("nexus_after.html", "nexus_after.webp")
+    bullet_box("After (internal proxy cache)", [
+        "**Nexus Docker proxy** inside AKS (pull-through cache via Ingress)",
+        "Manifests retargeted to `docker-group.dev.sgarch.net` (GitOps)",
+        "Only **cache-miss** goes to Docker Hub; reliable upgrades",
+        "Private registry endpoint improves control & auditability",
+    ])
+    k1, k2 = st.columns(2)
+    with k1: kpi("429 errors", "0", "during upgrades")
+    with k2: kpi("Cold pull", "~60 ms", "cached layer")
 
 st.divider()
 
 # ===================== Case 3 =====================
-st.subheader("3) **Keycloak Deployment + sticky sessions** → **StatefulSet clustering + build cache (PVC)**")
-tab_b3, tab_a3 = st.tabs(["Before", "After"])
+st.subheader("3) Keycloak Deployment + sticky sessions → StatefulSet clustering + build cache (PVC)")
 
-with tab_b3:
-    c1, c2 = st.columns([1.2, 0.8], vertical_alignment="top")
-    with c1:
-        show_drawio_or_image("keycloak_before.html", "keycloak_before.webp")
-    with c2:
-        bullet_box("Before (no clustering)", [
-            "Ran as a Deployment; sticky sessions at ingress",
-            "Quarkus build on each start → **~6 min cold start**",
-            "Multi-pod token exchange failed at times (no shared cache)",
-        ])
+left, right = st.columns(2, vertical_alignment="top")
 
-with tab_a3:
-    c1, c2, _ = st.columns([1.2, 0.8, 0.01], vertical_alignment="top")
-    with c1:
-        show_drawio_or_image("keycloak_after.html", "keycloak_after.webp")
-    with c2:
-        bullet_box("After (HA + fast start)", [
-            "Migrated to **StatefulSet** + **Headless Service**",
-            "**DNS_PING + JGroups/Infinispan** replicate auth/session state",
-            "InitContainer caches Quarkus build to **PVC**; Keycloak `--optimized` start",
-            "**Startup ~55 s**; any pod can complete OAuth flow",
-        ])
-        a1, a2, a3 = st.columns(3)
-        with a1: kpi("Startup", "~55 s", "from 6+ min")
-        with a2: kpi("HA", "Multi-pod", "podAntiAffinity + PDB")
-        with a3: kpi("Auth errors", "0", "during rollout")
+with left:
+    show_drawio_or_image("keycloak_before.html", "keycloak_before.webp")
+    bullet_box("Before (no clustering)", [
+        "Ran as a Deployment; sticky sessions at ingress",
+        "Quarkus build on each start → **~6 min cold start**",
+        "Multi-pod token exchange failed at times (no shared cache)",
+    ])
+
+with right:
+    show_drawio_or_image("keycloak_after.html", "keycloak_after.webp")
+    bullet_box("After (HA + fast start)", [
+        "Migrated to **StatefulSet** + **Headless Service**",
+        "**DNS_PING + JGroups/Infinispan** replicate auth/session state",
+        "InitContainer caches Quarkus build to **PVC**; Keycloak `--optimized` start",
+        "**Startup ~55 s**; any pod can complete OAuth flow",
+    ])
+    k1, k2, k3 = st.columns(3)
+    with k1: kpi("Startup", "~55 s", "from 6+ min")
+    with k2: kpi("HA", "Multi-pod", "podAntiAffinity + PDB")
+    with k3: kpi("Auth errors", "0", "during rollout")
 
 st.divider()
 st.write("📄 Download the static PDF version:  ", "[resume.pdf](resume.pdf)")
