@@ -8,6 +8,16 @@ from streamlit.components.v1 import html as html_component
 st.set_page_config(page_title="Architecture Improvement", page_icon="🧭", layout="wide")
 ASSETS = Path("assets")
 
+# light spacing trim
+st.markdown("""
+<style>
+/* tighten some paddings */
+.block-container { padding-top: 1.2rem; }
+div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stMetric"]) { margin-top: .25rem; }
+</style>
+""", unsafe_allow_html=True)
+
+# Access control (choose one in Secrets)
 ACCESS_CODE_HASH = os.getenv("ACCESS_CODE_HASH", "") or st.secrets.get("ACCESS_CODE_HASH", "")
 ACCESS_CODE      = os.getenv("ACCESS_CODE", "")      or st.secrets.get("ACCESS_CODE", "")
 
@@ -59,22 +69,26 @@ def bullet_box(title: str, bullets: list[str]):
     return c
 
 def _extract_mxgraph_div(html_text: str) -> str | None:
-    m = re.search(r'(<div[^>]+class="mxgraph"[^>]*data-mxgraph=.*?</div>)', html_text, re.S | re.I)
+    # robust: allow single/double quotes and other classes around mxgraph
+    pat = r'(<div[^>]+class=(?:"[^"]*\\bmxgraph\\b[^"]*"|\'[^\']*\\bmxgraph\\b[^\']*\')[^>]*data-mxgraph=(?:"[^"]*"|\'[^\']*\')[^>]*>\\s*</div>)'
+    m = re.search(pat, html_text, re.S | re.I)
     return m.group(1) if m else None
 
-def show_drawio_html(filename: str, height: int = 640, scrolling: bool = False) -> bool:
+def render_drawio(filename: str, height: int = 620, scrolling: bool = False) -> bool:
     """
-    Render draw.io export by extracting the mxgraph div and feeding it to viewer-static.min.js.
-    Works more reliably inside Streamlit than embedding the whole exported HTML.
+    1) Try mxgraph-div + viewer-static.min.js wrapper (best).
+    2) Fall back to embedding the full export.
     """
     p = ASSETS / filename
     if not p.exists():
         return False
     try:
         raw = p.read_text(encoding="utf-8", errors="ignore")
-        mx = _extract_mxgraph_div(raw)
-        if not mx:
-            return False
+    except Exception:
+        return False
+
+    mx = _extract_mxgraph_div(raw)
+    if mx:
         wrapper = f"""
 <!DOCTYPE html><html><head><meta charset="utf-8">
 <script src="https://viewer.diagrams.net/js/viewer-static.min.js"></script>
@@ -83,16 +97,18 @@ def show_drawio_html(filename: str, height: int = 640, scrolling: bool = False) 
 """
         html_component(wrapper, height=height, scrolling=scrolling)
         return True
-    except Exception:
-        return False
 
-def show_drawio_or_image(html_name: str, *fallback_images: str, height: int = 640):
-    if not show_drawio_html(html_name, height=height):
+    # fallback: embed full export (some exports still work fine)
+    html_component(raw, height=height, scrolling=True)
+    return True
+
+def show_drawio_or_image(html_name: str, *fallback_images: str, height: int = 620):
+    if not render_drawio(html_name, height=height):
         img = load_image(*fallback_images)
         if img:
             st.image(img, use_column_width=True)
         else:
-            st.warning(f"Diagram not found: assets/{html_name}")
+            st.warning(f"Diagram not found or unreadable: assets/{html_name}")
 
 # ---------------------- Sidebar gate --------------------------
 with st.sidebar:
@@ -110,18 +126,25 @@ with st.sidebar:
         st.stop()
     st.success("Access granted")
 
+    # tiny inspector to confirm files are there
+    with st.expander("🛠 Assets inspector", expanded=False):
+        try:
+            st.json(sorted([p.name for p in ASSETS.iterdir() if p.is_file()]))
+        except Exception:
+            st.write("No assets/ directory?")
+
 # --------------------------- Header ---------------------------
 st.title("Architecture Improvement")
 st.caption("Three recent infrastructure transformations with measurable impact.")
 
-# ======= Case 1 — FE Storage SPA → FE on AKS (BFF) =======
+# ===================== Case 1 =====================
 st.subheader("1) **F/E Storage Account + B/E on AKS (SPA)** → **F/E containerized on AKS with B/E (BFF)**")
+tab_b1, tab_a1 = st.tabs(["Before", "After"])
 
-tab_before, tab_after = st.tabs(["Before", "After"])
-with tab_before:
+with tab_b1:
     c1, c2 = st.columns([1.2, 0.8], vertical_alignment="top")
     with c1:
-        show_drawio_or_image("fe_before.html", "fe_before.webp", height=620)
+        show_drawio_or_image("fe_before.html", "fe_before.webp")
     with c2:
         bullet_box("Before (SPA + public API)", [
             "Frontend hosted on **Storage static website**",
@@ -130,12 +153,12 @@ with tab_before:
         ])
         a1, a2 = st.columns(2)
         with a1: kpi("Latency", "↑", "edge hops + CORS")
-        with a2: kpi("Surface", "wider", "public API exposed")
+        with a2: kpi("Security", "↓", "public API exposed")
 
-with tab_after:
+with tab_a1:
     c1, c2 = st.columns([1.2, 0.8], vertical_alignment="top")
     with c1:
-        show_drawio_or_image("fe_after.html", "fe_after.webp", height=620)
+        show_drawio_or_image("fe_after.html", "fe_after.webp")
     with c2:
         bullet_box("After (BFF on AKS)", [
             "FE containerized & deployed **with B/E** in the same AKS cluster",
@@ -147,7 +170,6 @@ with tab_after:
         with a1: kpi("Latency", "↓", "fewer edge hops")
         with a2: kpi("Security", "↑", "no public API")
 
-# Traffic Flow + Highlights side-by-side
 lf, rt = st.columns(2, vertical_alignment="top")
 with lf:
     st.markdown("#### Traffic Flow (Before vs. After)")
@@ -192,14 +214,13 @@ with rt:
 
 st.divider()
 
-# ======= Case 2 — Docker Hub → Nexus proxy cache =======
+# ===================== Case 2 =====================
 st.subheader("2) **Direct pulls from Docker Hub** → **In-cluster Nexus Docker proxy (pull-through cache)**")
 tab_b2, tab_a2 = st.tabs(["Before", "After"])
 
 with tab_b2:
     c1, c2 = st.columns([1.2, 0.8], vertical_alignment="top")
-    with c1:
-        show_drawio_or_image("nexus_before.html", "nexus_before.webp", height=620)
+    with c1: show_drawio_or_image("nexus_before.html", "nexus_before.webp")
     with c2:
         bullet_box("Before (external dependency)", [
             "Every node/pod pulled images from **Docker Hub** via Firewall SNAT",
@@ -209,8 +230,7 @@ with tab_b2:
 
 with tab_a2:
     c1, c2 = st.columns([1.2, 0.8], vertical_alignment="top")
-    with c1:
-        show_drawio_or_image("nexus_after.html", "nexus_after.webp", height=620)
+    with c1: show_drawio_or_image("nexus_after.html", "nexus_after.webp")
     with c2:
         bullet_box("After (internal proxy cache)", [
             "**Nexus Docker proxy** inside AKS (pull-through cache via Ingress)",
@@ -224,14 +244,13 @@ with tab_a2:
 
 st.divider()
 
-# ======= Case 3 — Keycloak Deployment → StatefulSet + cache =======
+# ===================== Case 3 =====================
 st.subheader("3) **Keycloak Deployment + sticky sessions** → **StatefulSet clustering + build cache (PVC)**")
 tab_b3, tab_a3 = st.tabs(["Before", "After"])
 
 with tab_b3:
     c1, c2 = st.columns([1.2, 0.8], vertical_alignment="top")
-    with c1:
-        show_drawio_or_image("keycloak_before.html", "keycloak_before.webp", height=620)
+    with c1: show_drawio_or_image("keycloak_before.html", "keycloak_before.webp")
     with c2:
         bullet_box("Before (no clustering)", [
             "Ran as a Deployment; sticky sessions at ingress",
@@ -240,9 +259,8 @@ with tab_b3:
         ])
 
 with tab_a3:
-    c1, c2 = st.columns([1.2, 0.8], vertical_alignment="top")
-    with c1:
-        show_drawio_or_image("keycloak_after.html", "keycloak_after.webp", height=620)
+    c1, c2, c3 = st.columns([1.2, 0.8, 0.01], vertical_alignment="top")
+    with c1: show_drawio_or_image("keycloak_after.html", "keycloak_after.webp")
     with c2:
         bullet_box("After (HA + fast start)", [
             "Migrated to **StatefulSet** + **Headless Service**",
