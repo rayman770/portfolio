@@ -42,16 +42,11 @@ def kpi(label, value, sub=""):
     c = st.container(border=True)
     c.metric(label, value, sub)
 
-def load_first(*names: str):
-    """Return the first image under assets/ that opens successfully, else None."""
-    for n in names:
-        p = ASSETS / n
-        if p.exists():
-            try:
-                return Image.open(p)
-            except Exception:
-                pass
-    return None
+def load_img(path: Path):
+    try:
+        return Image.open(path)
+    except Exception:
+        return None
 
 def bullet_box(title: str, bullets: list[str]):
     c = st.container(border=True)
@@ -74,6 +69,33 @@ def show_drawio_html(filename: str, height: int = 740, scrolling: bool = False) 
         return True
     except Exception:
         return False
+
+def show_before_after(prefix: str, height: int = 740):
+    """
+    Render two tabs: Before / After.
+    Tries <prefix>_before.html / <prefix>_after.html first.
+    Falls back to <prefix>_before.webp / <prefix>_after.webp if HTML Missing.
+    """
+    before_html = f"{prefix}_before.html"
+    after_html  = f"{prefix}_after.html"
+    before_img  = ASSETS / f"{prefix}_before.webp"
+    after_img   = ASSETS / f"{prefix}_after.webp"
+
+    tabs = st.tabs(["Before", "After"])
+
+    with tabs[0]:
+        if not show_drawio_html(before_html, height=height):
+            if before_img.exists() and (img := load_img(before_img)):
+                st.image(img, use_column_width=True)
+            else:
+                st.warning(f"Missing: assets/{before_html} (or {before_img.name})")
+
+    with tabs[1]:
+        if not show_drawio_html(after_html, height=height):
+            if after_img.exists() and (img := load_img(after_img)):
+                st.image(img, use_column_width=True)
+            else:
+                st.warning(f"Missing: assets/{after_html} (or {after_img.name})")
 
 # ---------- Sidebar gate ----------
 with st.sidebar:
@@ -102,11 +124,7 @@ st.subheader("1) **F/E Storage Account + B/E on AKS (SPA)** → **F/E containeri
 
 col1, col2 = st.columns([1.2, 0.8])
 with col1:
-    # Try animated HTML first; fallback to image
-    if not show_drawio_html("fe.html", height=740):
-        img_fe = load_first("FE Improvement.webp", "FE_Arch_Improvement.webp", "fe.webp")
-        if img_fe: st.image(img_fe, use_column_width=True)
-        else:      st.warning("FE diagram not found (expected assets/fe.html or an image).")
+    show_before_after("fe", height=740)
 
 with col2:
     bullet_box("Before (SPA + public API)", [
@@ -178,10 +196,7 @@ st.subheader("2) **Direct pulls from Docker Hub** → **In-cluster Nexus Docker 
 
 col1, col2 = st.columns([1.2, 0.8])
 with col1:
-    if not show_drawio_html("nexus.html", height=740):
-        img_proxy = load_first("Nexus_Improvement.webp", "proxy.webp")
-        if img_proxy: st.image(img_proxy, use_column_width=True)
-        else:         st.warning("Nexus diagram not found (expected assets/nexus.html or an image).")
+    show_before_after("nexus", height=740)
 
 with col2:
     bullet_box("Before (external dependency)", [
@@ -208,10 +223,7 @@ st.subheader("3) **Keycloak Deployment + sticky sessions** → **StatefulSet clu
 
 col1, col2 = st.columns([1.2, 0.8])
 with col1:
-    if not show_drawio_html("keycloak.html", height=740):
-        img_kc = load_first("Kecloak After.webp", "Keycloak_Improvement.webp", "kc.webp")
-        if img_kc: st.image(img_kc, use_column_width=True)
-        else:      st.warning("Keycloak diagram not found (expected assets/keycloak.html or an image).")
+    show_before_after("keycloak", height=740)
 
 with col2:
     bullet_box("Before (no clustering)", [
