@@ -153,7 +153,7 @@ with tab_b1:
         ])
         a1, a2 = st.columns(2)
         with a1: kpi("Latency", "↑", "edge hops + CORS")
-        with a2: kpi("Security", "↓", "public API exposed")
+        with a2: kpi("Surface", "wider", "public API exposed")
 
 with tab_a1:
     c1, c2 = st.columns([1.2, 0.8], vertical_alignment="top")
