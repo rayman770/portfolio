@@ -204,7 +204,7 @@ st.subheader("3) Keycloak Deployment + sticky sessions → StatefulSet clusterin
 l3, r3 = st.columns([1, 1], vertical_alignment="top")
 
 with l3:
-    show_drawio_or_warn("keycloak_before.html", height=1500)  # taller, no inner scroll
+    show_drawio_or_warn("keycloak_before.html", height=500)  # taller, no inner scroll
     bullet_box("Before (no clustering)", [
         "Ran as a Deployment; sticky sessions at ingress",
         "Quarkus build on each start → **~6 min cold start**",
@@ -212,7 +212,7 @@ with l3:
     ])
 
 with r3:
-    show_drawio_or_warn("keycloak_after.html", height=1500)   # taller, no inner scroll
+    show_drawio_or_warn("keycloak_after.html", height=500)   # taller, no inner scroll
     bullet_box("After (HA + fast start)", [
         "Migrated to **StatefulSet** + **Headless Service**",
         "**DNS_PING + JGroups/Infinispan** replicate auth/session state",
