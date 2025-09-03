@@ -1,4 +1,5 @@
 import os, time, hmac, bcrypt, re
+from typing import Optional
 from pathlib import Path
 import streamlit as st
 from streamlit.components.v1 import html as html_component
@@ -9,12 +10,12 @@ ASSETS = Path("assets")
 
 # Per-file heights so diagrams fit without internal scrollbars
 HEIGHTS = {
-    "fe_before.html": 420,
-    "fe_after.html": 420,
-    "nexus_before.html": 580,
-    "nexus_after.html": 580,
-    "keycloak_before.html": 600,
-    "keycloak_after.html": 600,
+    "fe_before.html": 440,
+    "fe_after.html": 440,
+    "nexus_before.html": 760,   # bigger to avoid inner scroll
+    "nexus_after.html": 760,
+    "keycloak_before.html": 820,
+    "keycloak_after.html": 820,
 }
 
 # light spacing trim
@@ -66,7 +67,7 @@ def bullet_box(title: str, bullets: list[str]):
         c.markdown(f"- {b}")
     return c
 
-def _extract_mxgraph_div(html_text: str) -> str | None:
+def _extract_mxgraph_div(html_text: str) -> Optional[str]:
     """
     Find a <div ... class="mxgraph" ... data-mxgraph="..."></div>
     Accepts single/double quotes, class order, extra classes, and whitespace.
@@ -76,18 +77,21 @@ def _extract_mxgraph_div(html_text: str) -> str | None:
     return m.group(1) if m else None
 
 def _inject_base_tag(doc: str) -> str:
-    """Insert <base href="https://viewer.diagrams.net/"> right after <head> (once)."""
+    """
+    Insert <base href="https://viewer.diagrams.net/"> right after <head> (once).
+    Uses a lambda to avoid any accidental \\1 literal output.
+    """
     if re.search(r"<base\s", doc, re.I):
         return doc
     return re.sub(
         r"(<head[^>]*>)",
-        r'\1<base href="https://viewer.diagrams.net/">',
+        lambda m: m.group(1) + '<base href="https://viewer.diagrams.net/">',
         doc,
         count=1,
         flags=re.I,
     )
 
-def render_drawio(filename: str, height: int | None = None, scrolling: bool = False) -> bool:
+def render_drawio(filename: str, height: Optional[int] = None, scrolling: bool = False) -> bool:
     """
     Robust Draw.io/diagrams.net renderer for HTML exports.
     1) If an mxgraph <div> exists, wrap it with viewer-static and a <base>.
@@ -101,11 +105,10 @@ def render_drawio(filename: str, height: int | None = None, scrolling: bool = Fa
     except Exception:
         return False
 
-    h = height or HEIGHTS.get(filename, 520)
+    h = height or HEIGHTS.get(filename, 540)
 
     mx = _extract_mxgraph_div(raw)
     if mx:
-        # wrapper has no stray \1 and fills the iframe area
         wrapper = f"""<!doctype html>
 <html>
 <head>
@@ -131,7 +134,7 @@ def render_drawio(filename: str, height: int | None = None, scrolling: bool = Fa
     html_component(raw_with_base, height=h, scrolling=scrolling)
     return True
 
-def show_drawio_or_warn(html_name: str, height: int | None = None):
+def show_drawio_or_warn(html_name: str, height: Optional[int] = None):
     ok = render_drawio(html_name, height=height, scrolling=False)
     if not ok:
         st.container(border=True).warning(f"Diagram not found or unreadable: assets/{html_name}")
