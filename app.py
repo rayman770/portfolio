@@ -218,38 +218,12 @@ with col_hi:
 st.divider()
 
 # ============================ Case 2 ============================
-st.subheader("2) Direct pulls from Docker Hub → In-cluster Nexus Docker proxy (pull-through cache)")
-l2, r2 = st.columns([1, 1], vertical_alignment="top")
-
-with l2:
-    show_drawio_or_warn("nexus_before.html", height=880)  # taller, no inner scroll
-    bullet_box("Before (external dependency)", [
-        "Every node/pod pulled images from **Docker Hub** via Firewall SNAT",
-        "Hit **429 rate-limits** during AKS upgrades",
-        "Slow cold pulls; no in-cluster cache",
-    ])
-
-with r2:
-    show_drawio_or_warn("nexus_after.html", height=880)   # taller, no inner scroll
-    bullet_box("After (internal proxy cache)", [
-        "**Nexus Docker proxy** inside AKS (pull-through cache via Ingress)",
-        "Manifests retargeted to `docker-group.dev.sgarch.net` (GitOps)",
-        "Only **cache-miss** goes to Docker Hub; reliable upgrades",
-        "Private registry endpoint improves control & auditability",
-    ])
-    c1, c2 = st.columns(2)
-    with c1: kpi("429 errors", "0", "during upgrades")
-    with c2: kpi("Cold pull", "~60 ms", "cached layer")
-
-st.divider()
-
-# ============================ Case 3 ============================
-st.subheader("3) Keycloak Deployment + sticky sessions → StatefulSet clustering + build cache (PVC)")
+st.subheader("2) Keycloak Deployment + sticky sessions → StatefulSet clustering + build cache (PVC)")
 l3, r3 = st.columns([1, 1], vertical_alignment="top")
 
 with l3:
     show_drawio_or_warn("keycloak_before.html", height=600)  # taller, no inner scroll
-    bullet_box("Before (no clustering)", [
+    bullet_box("Before - Deployment + Sticky session (no clustering)", [
         "Ran as a Deployment; sticky sessions at ingress",
         "Quarkus build on each start → **~6 min cold start**",
         "Multi-pod token exchange failed at times (no shared cache)",
@@ -267,6 +241,32 @@ with r3:
     with c1: kpi("Startup", "~55 s", "from 6+ min")
     with c2: kpi("HA", "Multi-pod", "podAntiAffinity + PDB")
     with c3: kpi("Auth errors", "0", "during rollout")
+
+st.divider()
+
+# ============================ Case 3 ============================
+st.subheader("3) Direct pulls from Docker Hub → In-cluster Nexus Docker proxy (pull-through cache)")
+l2, r2 = st.columns([1, 1], vertical_alignment="top")
+
+with l2:
+    show_drawio_or_warn("nexus_before.html", height=880)  # taller, no inner scroll
+    bullet_box("Before (external dependency)", [
+        "Every node/pod pulled images from **Docker Hub** via Firewall SNAT",
+        "Hit **429 rate-limits** during AKS upgrades",
+        "Slow cold pulls (~5 seconds); no in-cluster cache",
+    ])
+
+with r2:
+    show_drawio_or_warn("nexus_after.html", height=880)   # taller, no inner scroll
+    bullet_box("After (internal proxy cache)", [
+        "**Nexus Docker proxy** inside AKS as pull-through cache (Cache Stroage PVC) ",
+        "Manifests retargeted to Nexus Docker proxy domain (GitOps)",
+        "Only **cache-miss** goes to Docker Hub; reliable upgrades",
+        "Private registry endpoint improves control & auditability",
+    ])
+    c1, c2 = st.columns(2)
+    with c1: kpi("429 Too Many Request Errors", "0", "during Kubernetes upgrades")
+    with c2: kpi("Pull time", "98% Faster (~60 ms)", "cached layer")
 
 st.divider()
 st.write("📄 Download the static PDF version:  ", "[resume.pdf](resume.pdf)")
