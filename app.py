@@ -7,6 +7,16 @@ from streamlit.components.v1 import html as html_component
 st.set_page_config(page_title="Architecture Improvement", page_icon="🧭", layout="wide")
 ASSETS = Path("assets")
 
+# Per-file heights so diagrams fit without internal scrollbars
+HEIGHTS = {
+    "fe_before.html": 420,
+    "fe_after.html": 420,
+    "nexus_before.html": 580,   # was 360 → no more scroll
+    "nexus_after.html": 580,
+    "keycloak_before.html": 600,
+    "keycloak_after.html": 600,
+}
+
 # light spacing trim
 st.markdown("""
 <style>
@@ -56,29 +66,32 @@ def bullet_box(title: str, bullets: list[str]):
         c.markdown(f"- {b}")
     return c
 
-def _extract_mxgraph_div(html_text: str):
+def _extract_mxgraph_div(html_text: str) -> str | None:
     """
     Find a <div ... class="mxgraph" ... data-mxgraph="..."></div>
     Accepts single/double quotes, class order, extra classes, and whitespace.
     """
-    pat = r'(<div[^>]*class=(?:"[^"]*\\bmxgraph\\b[^"]*"|\'[^\']*\\bmxgraph\\b[^\']*\')[^>]*data-mxgraph=(?:"[^"]*"|\'[^\']*\')[^>]*>\\s*</div>)'
+    pat = r'(<div[^>]*class=(?:"[^"]*\bmxgraph\b[^"]*"|\'[^\']*\bmxgraph\b[^\']*\')[^>]*data-mxgraph=(?:"[^"]*"|\'[^\']*\')[^>]*>\s*</div>)'
     m = re.search(pat, html_text, re.I | re.S)
     return m.group(1) if m else None
 
 def _inject_base_tag(doc: str) -> str:
     """Insert <base href="https://viewer.diagrams.net/"> right after <head> (once)."""
-    if re.search(r"<base\\s", doc, re.I):
+    if re.search(r"<base\s", doc, re.I):
         return doc
-    # Use a callable to avoid stray "\1" appearing in the output
-    def repl(m: re.Match) -> str:
-        return m.group(1) + '<base href="https://viewer.diagrams.net/">'
-    return re.sub(r"(<head[^>]*>)", repl, doc, count=1, flags=re.I)
+    return re.sub(
+        r"(<head[^>]*>)",
+        r'\1<base href="https://viewer.diagrams.net/">',
+        doc,
+        count=1,
+        flags=re.I,
+    )
 
-def render_drawio(filename: str, height: int = 520, scrolling: bool = False) -> bool:
+def render_drawio(filename: str, height: int | None = None, scrolling: bool = False) -> bool:
     """
-    Draw.io/diagrams.net renderer for HTML exports.
+    Robust Draw.io/diagrams.net renderer for HTML exports.
     1) If an mxgraph <div> exists, wrap it with viewer-static and a <base>.
-    2) Otherwise, embed the full HTML (with injected <base>) directly.
+    2) Otherwise embed the full HTML but ensure it has a <base>.
     """
     p = ASSETS / filename
     if not p.exists():
@@ -88,33 +101,38 @@ def render_drawio(filename: str, height: int = 520, scrolling: bool = False) -> 
     except Exception:
         return False
 
+    h = height or HEIGHTS.get(filename, 520)
+
     mx = _extract_mxgraph_div(raw)
     if mx:
+        # wrapper has no stray \1 and fills the iframe area
         wrapper = f"""<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <base href="https://viewer.diagrams.net/">
 <script src="https://viewer.diagrams.net/js/viewer-static.min.js"></script>
 <style>
-  html,body,#holder {{ height:100%; width:100%; margin:0; padding:0; }}
-  #holder > div {{ height:100% !important; width:100% !important; }}
+  html,body,#holder{{height:100%;margin:0}}
+  #holder>div{{height:100%}}
+  .mxgraph{{max-width:100%;border:0}}
 </style>
 </head>
 <body>
   <div id="holder">{mx}</div>
 </body>
 </html>"""
-        html_component(wrapper, height=height, scrolling=scrolling)
+        html_component(wrapper, height=h, scrolling=scrolling)
         return True
 
-    # Full export path
+    # Fallback: embed the full export but make sure it can resolve relative assets
     raw_with_base = _inject_base_tag(raw)
-    html_component(raw_with_base, height=height, scrolling=True)
+    html_component(raw_with_base, height=h, scrolling=scrolling)
     return True
 
-def show_drawio_or_warn(html_name: str, height: int = 520):
-    ok = render_drawio(html_name, height=height)
+def show_drawio_or_warn(html_name: str, height: int | None = None):
+    ok = render_drawio(html_name, height=height, scrolling=False)
     if not ok:
         st.container(border=True).warning(f"Diagram not found or unreadable: assets/{html_name}")
 
@@ -149,7 +167,7 @@ st.subheader("1) F/E Storage Account + public API → F/E containerized with B/E
 left, right = st.columns([1, 1], vertical_alignment="top")
 
 with left:
-    show_drawio_or_warn("fe_before.html", height=420)
+    show_drawio_or_warn("fe_before.html")  # 420
     bullet_box("Before (SPA + public API)", [
         "Frontend hosted on **Storage static website**",
         "Browser calls **public API** through the edge → CORS & more hops",
@@ -160,7 +178,7 @@ with left:
     with c2: kpi("Surface", "wider", "public API exposed")
 
 with right:
-    show_drawio_or_warn("fe_after.html", height=420)
+    show_drawio_or_warn("fe_after.html")   # 420
     bullet_box("After (BFF on AKS)", [
         "FE containerized & deployed **with B/E** in the same AKS cluster",
         "**Single origin** via AFD → AKS over Private Link (**no CORS**)",
@@ -178,7 +196,7 @@ st.subheader("2) Direct pulls from Docker Hub → In-cluster Nexus Docker proxy 
 l2, r2 = st.columns([1, 1], vertical_alignment="top")
 
 with l2:
-    show_drawio_or_warn("nexus_before.html", height=360)
+    show_drawio_or_warn("nexus_before.html")   # 580
     bullet_box("Before (external dependency)", [
         "Every node/pod pulled images from **Docker Hub** via Firewall SNAT",
         "Hit **429 rate-limits** during AKS upgrades",
@@ -186,7 +204,7 @@ with l2:
     ])
 
 with r2:
-    show_drawio_or_warn("nexus_after.html", height=360)
+    show_drawio_or_warn("nexus_after.html")    # 580
     bullet_box("After (internal proxy cache)", [
         "**Nexus Docker proxy** inside AKS (pull-through cache via Ingress)",
         "Manifests retargeted to `docker-group.dev.sgarch.net` (GitOps)",
@@ -204,7 +222,7 @@ st.subheader("3) Keycloak Deployment + sticky sessions → StatefulSet clusterin
 l3, r3 = st.columns([1, 1], vertical_alignment="top")
 
 with l3:
-    show_drawio_or_warn("keycloak_before.html", height=360)
+    show_drawio_or_warn("keycloak_before.html")  # 600
     bullet_box("Before (no clustering)", [
         "Ran as a Deployment; sticky sessions at ingress",
         "Quarkus build on each start → **~6 min cold start**",
@@ -212,7 +230,7 @@ with l3:
     ])
 
 with r3:
-    show_drawio_or_warn("keycloak_after.html", height=360)
+    show_drawio_or_warn("keycloak_after.html")   # 600
     bullet_box("After (HA + fast start)", [
         "Migrated to **StatefulSet** + **Headless Service**",
         "**DNS_PING + JGroups/Infinispan** replicate auth/session state",
