@@ -23,7 +23,7 @@ ACCESS_CODE      = os.getenv("ACCESS_CODE", "")      or st.secrets.get("ACCESS_C
 def is_authed():
     if st.session_state.get("authed"):
         return True
-    qp = st.experimental_get_query_params()
+    qp = st.experimental_get_query_params()  # kept as-is to match your working version
     if "code" in qp and qp["code"]:
         return verify_code(qp["code"][0])
     return False
@@ -178,7 +178,7 @@ st.subheader("2) Direct pulls from Docker Hub → In-cluster Nexus Docker proxy 
 l2, r2 = st.columns([1, 1], vertical_alignment="top")
 
 with l2:
-    show_drawio_or_warn("nexus_before.html", height=360)
+    show_drawio_or_warn("nexus_before.html", height=820)  # taller, no inner scroll
     bullet_box("Before (external dependency)", [
         "Every node/pod pulled images from **Docker Hub** via Firewall SNAT",
         "Hit **429 rate-limits** during AKS upgrades",
@@ -186,7 +186,7 @@ with l2:
     ])
 
 with r2:
-    show_drawio_or_warn("nexus_after.html", height=360)
+    show_drawio_or_warn("nexus_after.html", height=820)   # taller, no inner scroll
     bullet_box("After (internal proxy cache)", [
         "**Nexus Docker proxy** inside AKS (pull-through cache via Ingress)",
         "Manifests retargeted to `docker-group.dev.sgarch.net` (GitOps)",
@@ -204,7 +204,7 @@ st.subheader("3) Keycloak Deployment + sticky sessions → StatefulSet clusterin
 l3, r3 = st.columns([1, 1], vertical_alignment="top")
 
 with l3:
-    show_drawio_or_warn("keycloak_before.html", height=360)
+    show_drawio_or_warn("keycloak_before.html", height=900)  # taller, no inner scroll
     bullet_box("Before (no clustering)", [
         "Ran as a Deployment; sticky sessions at ingress",
         "Quarkus build on each start → **~6 min cold start**",
@@ -212,7 +212,7 @@ with l3:
     ])
 
 with r3:
-    show_drawio_or_warn("keycloak_after.html", height=360)
+    show_drawio_or_warn("keycloak_after.html", height=900)   # taller, no inner scroll
     bullet_box("After (HA + fast start)", [
         "Migrated to **StatefulSet** + **Headless Service**",
         "**DNS_PING + JGroups/Infinispan** replicate auth/session state",
