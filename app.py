@@ -146,6 +146,8 @@ st.caption("Three recent infrastructure transformations with measurable impact."
 
 # ============================ Case 1 ============================
 st.subheader("1) F/E Storage Account + public API → F/E containerized with B/E (BFF on AKS)")
+
+# --- top row: diagrams and short bullets ---
 left, right = st.columns([1, 1], vertical_alignment="top")
 
 with left:
@@ -155,9 +157,7 @@ with left:
         "Browser calls **public API** through the edge → CORS & more hops",
         "Azure Front Door routes to Storage (FE) and AKS (API) separately",
     ])
-    c1, c2 = st.columns(2)
-    with c1: kpi("Latency", "↑", "edge hops + CORS")
-    with c2: kpi("Surface", "wider", "public API exposed")
+    # (By request) No KPI boxes on BEFORE side
 
 with right:
     show_drawio_or_warn("fe_after.html", height=420)
@@ -167,9 +167,53 @@ with right:
         "FE ↔ BE are **in-cluster** service-to-service (**BFF** pattern)",
         "Simpler deploys / rollback / observability",
     ])
-    c1, c2 = st.columns(2)
-    with c1: kpi("Latency", "↓", "fewer edge hops")
-    with c2: kpi("Security", "↑", "no public API")
+    k1, k2 = st.columns(2)
+    with k1: kpi("Latency", "↓", "fewer edge hops")
+    with k2: kpi("Security", "↑", "no public API")
+
+# --- second row: details side-by-side ---
+col_flow, col_hi = st.columns([1, 1], vertical_alignment="top")
+
+with col_flow:
+    st.markdown("#### Traffic Flow (Before vs. After)")
+    flow = st.container(border=True)
+    flow.markdown("""
+1) **Client → Azure FD**  
+   - Browser → Azure FD with WAF (TLS at AFD)  
+   - **Before:** Two hosts (F/E & B/E) ⇒ CORS required  
+   - **After:** Single host ⇒ no CORS for web ↔ API  
+
+2) **AFD → Origin via Private Link**  
+   - AFD → **PE (consumer)** → **PLS (provider)** performs **SNAT**  
+   - **Before (F/E origin):** PLS → **Storage static website** (HTML/JS/CSS)  
+   - **After (AKS origin):** PLS → **Internal Standard LB** → **Nginx Ingress (AKS)**  
+
+3) **App ↔ API path**  
+   - **Before:** Browser JS calls API directly via AFD to AKS  
+   - **After:** FE server (pods) calls BE **in-cluster** via `ClusterIP/DNS`  
+     `http://be-svc.<ns>.svc.cluster.local`  
+
+4) **AKS egress** → **Azure Firewall** (SNAT to public IP)  
+
+5) **DNS Proxy** → Azure DNS / Private Resolver for Private Link names
+""")
+
+with col_hi:
+    st.markdown("#### Transformation Highlights")
+    hi = st.container(border=True)
+    hi.markdown("""
+**Performance & Cost**  
+- In-cluster FE→BE calls cut Internet/edge hops ⇒ **lower latency**  
+- **Egress savings**: FE↔BE stays inside the cluster  
+
+**Security**  
+- Public API removed (API is **ClusterIP-only**)  
+- Origin reachable only via **AFD → PE → PLS → ILB → Ingress**  
+- Single controlled egress (Firewall **SNAT**) ⇒ simpler allow-listing & audit  
+
+**DevOps & Observability**  
+- Unified **CI/CD** & rollbacks; cleaner **health probes / logging**
+""")
 
 st.divider()
 
@@ -178,7 +222,7 @@ st.subheader("2) Direct pulls from Docker Hub → In-cluster Nexus Docker proxy 
 l2, r2 = st.columns([1, 1], vertical_alignment="top")
 
 with l2:
-    show_drawio_or_warn("nexus_before.html", height=850)  # taller, no inner scroll
+    show_drawio_or_warn("nexus_before.html", height=880)  # taller, no inner scroll
     bullet_box("Before (external dependency)", [
         "Every node/pod pulled images from **Docker Hub** via Firewall SNAT",
         "Hit **429 rate-limits** during AKS upgrades",
@@ -186,7 +230,7 @@ with l2:
     ])
 
 with r2:
-    show_drawio_or_warn("nexus_after.html", height=850)   # taller, no inner scroll
+    show_drawio_or_warn("nexus_after.html", height=880)   # taller, no inner scroll
     bullet_box("After (internal proxy cache)", [
         "**Nexus Docker proxy** inside AKS (pull-through cache via Ingress)",
         "Manifests retargeted to `docker-group.dev.sgarch.net` (GitOps)",
