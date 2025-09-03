@@ -151,7 +151,7 @@ st.subheader("1) F/E Storage Account + public API → F/E containerized with B/E
 left, right = st.columns([1, 1], vertical_alignment="top")
 
 with left:
-    show_drawio_or_warn("fe_before.html", height=420)
+    show_drawio_or_warn("fe_before.html", height=600)
     bullet_box("Before (SPA + public API)", [
         "Frontend hosted on **Storage static website**",
         "Browser calls **public API** through the edge → CORS & more hops",
@@ -160,7 +160,7 @@ with left:
     # (By request) No KPI boxes on BEFORE side
 
 with right:
-    show_drawio_or_warn("fe_after.html", height=420)
+    show_drawio_or_warn("fe_after.html", height=600)
     bullet_box("After (BFF on AKS)", [
         "FE containerized & deployed **with B/E** in the same AKS cluster",
         "**Single origin** via AFD → AKS over Private Link (**no CORS**)",
