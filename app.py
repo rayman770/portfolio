@@ -222,6 +222,7 @@ st.subheader("2) Keycloak Deployment + sticky sessions → StatefulSet clusterin
 col_flow, col_hi = st.columns([1, 1], vertical_alignment="top")
 
 with col_flow:
+    show_drawio_or_warn("keycloak_before.html", height=600)
     st.markdown("#### Before - Deployment + Sticky session (no clustering)")
     flow = st.container(border=True)
     flow.markdown("""
@@ -237,6 +238,7 @@ with col_flow:
 """)
 
 with col_hi:
+    show_drawio_or_warn("keycloak_after.html", height=600)
     st.markdown("#### After - Statefulset with Pod Clustering + Build Cache")
     hi = st.container(border=True)
     hi.markdown("""
