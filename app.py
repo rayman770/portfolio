@@ -1,5 +1,6 @@
 import os, time, hmac, bcrypt, re
 from pathlib import Path
+from html import escape
 import streamlit as st
 from streamlit.components.v1 import html as html_component
 
@@ -61,17 +62,17 @@ def _extract_mxgraph_div(html_text: str) -> str | None:
     Find a <div ... class="mxgraph" ... data-mxgraph="..."></div>
     Accepts single/double quotes, class order, extra classes, and whitespace.
     """
-    pat = r'(<div[^>]*class=(?:"[^"]*\bmxgraph\b[^"]*"|\'[^\']*\bmxgraph\b[^\']*\')[^>]*data-mxgraph=(?:"[^"]*"|\'[^\']*\')[^>]*>\s*</div>)'
+    pat = r'(<div[^>]*class=(?:"[^"]*\\bmxgraph\\b[^"]*"|\'[^\']*\\bmxgraph\\b[^\']*\')[^>]*data-mxgraph=(?:"[^"]*"|\'[^\']*\')[^>]*>\\s*</div>)'
     m = re.search(pat, html_text, re.I | re.S)
     return m.group(1) if m else None
 
 def _inject_base_tag(doc: str) -> str:
     """Insert <base href="https://viewer.diagrams.net/"> right after <head> (once)."""
-    if re.search(r"<base\s", doc, re.I):
+    if re.search(r"<base\\s", doc, re.I):
         return doc
     return re.sub(
         r"(<head[^>]*>)",
-        r'\1<base href="https://viewer.diagrams.net/">',
+        r'\\1<base href="https://viewer.diagrams.net/">',
         doc,
         count=1,
         flags=re.I,
@@ -81,7 +82,7 @@ def render_drawio(filename: str, height: int = 520, scrolling: bool = False) -> 
     """
     Robust Draw.io/diagrams.net renderer for HTML exports.
     1) If an mxgraph <div> exists, wrap it with viewer-static and a <base>.
-    2) Otherwise embed the full HTML but ensure it has a <base>.
+    2) Otherwise, nest the full HTML export in an <iframe srcdoc=...> with an injected <base>.
     """
     p = ASSETS / filename
     if not p.exists():
@@ -93,13 +94,17 @@ def render_drawio(filename: str, height: int = 520, scrolling: bool = False) -> 
 
     mx = _extract_mxgraph_div(raw)
     if mx:
+        # Best path: feed the mxgraph container to the viewer and make sure it fills the space.
         wrapper = f"""<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
 <base href="https://viewer.diagrams.net/">
 <script src="https://viewer.diagrams.net/js/viewer-static.min.js"></script>
-<style>html,body,#holder{{height:100%;margin:0}} #holder>div{{height:100%}}</style>
+<style>
+  html,body,#holder {{ height:100%; width:100%; margin:0; padding:0; }}
+  #holder > div, #holder iframe {{ height:100% !important; width:100% !important; border:0; display:block; }}
+</style>
 </head>
 <body>
   <div id="holder">{mx}</div>
@@ -108,9 +113,11 @@ def render_drawio(filename: str, height: int = 520, scrolling: bool = False) -> 
         html_component(wrapper, height=height, scrolling=scrolling)
         return True
 
-    # Fallback: embed the full export but make sure it can resolve relative assets
+    # Fallback: keep the export's head/scripts by nesting it in an iframe via srcdoc.
     raw_with_base = _inject_base_tag(raw)
-    html_component(raw_with_base, height=height, scrolling=True)
+    srcdoc = escape(raw_with_base, quote=True)
+    iframe = f"<iframe srcdoc='{srcdoc}' style='width:100%;height:{height}px;border:0;display:block;'></iframe>"
+    html_component(iframe, height=height + 6, scrolling=False)
     return True
 
 def show_drawio_or_warn(html_name: str, height: int = 520):
