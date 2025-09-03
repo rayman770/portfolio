@@ -178,7 +178,7 @@ st.subheader("2) Direct pulls from Docker Hub → In-cluster Nexus Docker proxy 
 l2, r2 = st.columns([1, 1], vertical_alignment="top")
 
 with l2:
-    show_drawio_or_warn("nexus_before.html", height=820)  # taller, no inner scroll
+    show_drawio_or_warn("nexus_before.html", height=850)  # taller, no inner scroll
     bullet_box("Before (external dependency)", [
         "Every node/pod pulled images from **Docker Hub** via Firewall SNAT",
         "Hit **429 rate-limits** during AKS upgrades",
@@ -186,7 +186,7 @@ with l2:
     ])
 
 with r2:
-    show_drawio_or_warn("nexus_after.html", height=820)   # taller, no inner scroll
+    show_drawio_or_warn("nexus_after.html", height=850)   # taller, no inner scroll
     bullet_box("After (internal proxy cache)", [
         "**Nexus Docker proxy** inside AKS (pull-through cache via Ingress)",
         "Manifests retargeted to `docker-group.dev.sgarch.net` (GitOps)",
